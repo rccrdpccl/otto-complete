@@ -40,4 +40,5 @@ After processing all comments, write a JSON file to `{{SPECS_DIR}}/{{ISSUE_KEY}}
 - Fix real bugs and valid code review feedback.
 - If a comment is about style preference with no functional impact, push back politely.
 - Do not introduce regressions when fixing review comments.
-- Always write the review-replies.json file, even if you addressed everything via code edits.
+- **MANDATORY**: You MUST write the `review-replies.json` file for EVERY comment, no exceptions. Each comment must get a reply explaining what you changed OR why no change is needed. A reviewer should NEVER be left without a response.
+- Even if you made code changes that fully address the comment, write a reply confirming what you did.

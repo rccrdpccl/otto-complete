@@ -91,10 +91,14 @@ def post_review_replies(
     pr_number: int,
     original_comments: list[dict],
     replies_file: str,
+    has_changes: bool = True,
 ):
     if not os.path.isfile(replies_file):
-        log.warning("%s: no review-replies.json produced, auto-resolving threads", issue_key)
-        auto_resolve_review_threads(github, pr_number, original_comments)
+        log.warning("%s: no review-replies.json produced", issue_key)
+        if has_changes:
+            auto_resolve_review_threads(github, pr_number, original_comments)
+        else:
+            _post_fallback_replies(github, pr_number, original_comments)
         mark_issue_comments_seen(github, original_comments)
         return
 
@@ -151,6 +155,20 @@ def mark_issue_comments_seen(github: GitHubClient, comments: list[dict]):
     for c in comments:
         if c["type"] == "issue":
             github.add_reaction(c["comment_id"], "eyes")
+
+
+def _post_fallback_replies(github: GitHubClient, pr_number: int, comments: list[dict]):
+    fallback_msg = f"Acknowledged — I reviewed this feedback but could not determine how to address it with code changes. Leaving for maintainer review.\n\n{BOT_MARKER}"
+    threads_data = None
+    for c in comments:
+        if c["type"] == "review":
+            github.reply_to_review_comment(pr_number, c["comment_id"], fallback_msg)
+            if threads_data is None:
+                threads_data = github.get_review_threads(pr_number)
+            thread_id = _find_thread_id(threads_data, c["comment_id"])
+        elif c["type"] == "issue":
+            github.comment_on_pr(pr_number, fallback_msg)
+    log.info("Posted fallback replies to %d comments on PR #%d", len(comments), pr_number)
 
 
 def _find_thread_id(threads_data: dict, comment_id: int) -> str | None:

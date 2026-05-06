@@ -329,8 +329,8 @@ class ImplementerBot(BaseBot):
         self.run_claude_on_repo("implementer-review", issue_key, prompt,
             "Read,Write,Edit,Bash", cfg.max_turns_review, cfg.max_budget_review)
 
-        changes = self.git.status()
-        if changes:
+        has_changes = bool(self.git.status())
+        if has_changes:
             log.info("%s: impl updated, committing", issue_key)
             self.git.remove_file(os.path.relpath(replies_file_path, cfg.clone_path))
             self.git.add()
@@ -338,4 +338,4 @@ class ImplementerBot(BaseBot):
             self.git.push_branch(impl_branch, force=True)
             self._reset_ci_attempts(issue_key)
 
-        post_review_replies(self.github, issue_key, pr_number, comments, replies_file_path)
+        post_review_replies(self.github, issue_key, pr_number, comments, replies_file_path, has_changes)
