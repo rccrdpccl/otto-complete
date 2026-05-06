@@ -88,7 +88,7 @@ class SpecifierBot(BaseBot):
 
         log.info("Spec file created, committing")
         self.git.add(os.path.join(cfg.specs_dir, issue_key))
-        self.git.commit(f"{issue_key}: specification")
+        self.git.commit(f"{issue_key}(spec): create specification")
         self.git.push_branch(branch)
 
         pr_body = (
@@ -148,7 +148,7 @@ class SpecifierBot(BaseBot):
         if changes:
             log.info("%s: spec updated, committing", issue_key)
             self.git.add(spec_path)
-            self.git.commit(f"{issue_key}: address review comments")
+            self.git.commit(f"{issue_key}(spec): address review comments")
             self.git.push_branch(branch, force=True)
 
         post_review_replies(self.github, issue_key, pr_number, comments, self.replies_file(issue_key))

@@ -109,7 +109,7 @@ class PlannerBot(BaseBot):
 
         log.info("Plan files created, committing")
         self.git.add(os.path.join(cfg.specs_dir, issue_key))
-        self.git.commit(f"{issue_key}: implementation plan and tasks")
+        self.git.commit(f"{issue_key}(plan): create implementation plan and tasks")
         self.git.push_branch(branch)
 
         summary, _ = self.jira.get_details(issue_key)
@@ -174,7 +174,7 @@ class PlannerBot(BaseBot):
         if changes:
             log.info("%s: plan updated, committing", issue_key)
             self.git.add(spec_path)
-            self.git.commit(f"{issue_key}: address plan review comments")
+            self.git.commit(f"{issue_key}(plan): address review comments")
             self.git.push_branch(branch, force=True)
 
         post_review_replies(self.github, issue_key, pr_number, comments, self.replies_file(issue_key))

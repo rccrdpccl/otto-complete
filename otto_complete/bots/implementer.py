@@ -334,7 +334,7 @@ class ImplementerBot(BaseBot):
             log.info("%s: impl updated, committing", issue_key)
             self.git.remove_file(os.path.relpath(replies_file_path, cfg.clone_path))
             self.git.add()
-            self.git.commit(f"{issue_key}: address impl review comments")
+            self.git.commit(f"{issue_key}: address review comments")
             self.git.push_branch(impl_branch, force=True)
             self._reset_ci_attempts(issue_key)
 
