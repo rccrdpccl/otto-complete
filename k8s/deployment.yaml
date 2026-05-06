@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otto-complete
+  namespace: otto-complete
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: otto-complete
+  template:
+    metadata:
+      labels:
+        app: otto-complete
+    spec:
+      initContainers:
+        - name: dind
+          image: docker:27-dind
+          restartPolicy: Always
+          securityContext:
+            privileged: true
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          volumeMounts:
+            - name: workdir
+              mountPath: /workdir
+            - name: docker-storage
+              mountPath: /var/lib/docker
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+      containers:
+        - name: agent
+          image: quay.io/rh_ee_rpiccoli/autodev:latest
+          imagePullPolicy: Always
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: otto-complete-secrets
+          env:
+            - name: OTTO_WORK_DIR
+              value: /workdir
+            - name: HOME
+              value: /home/agent
+            - name: CLAUDE_CODE_USE_VERTEX
+              value: "1"
+            - name: CLOUD_ML_REGION
+              value: global
+            - name: GOOGLE_CLOUD_PROJECT
+              value: itpc-gcp-eco-eng-claude
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /var/secrets/gcp/key.json
+            - name: DOCKER_HOST
+              value: tcp://localhost:2375
+            - name: GITHUB_APP_PRIVATE_KEY_PATH
+              value: /var/secrets/github-app/private-key.pem
+          volumeMounts:
+            - name: workdir
+              mountPath: /workdir
+            - name: gcp-sa-key
+              mountPath: /var/secrets/gcp
+              readOnly: true
+            - name: github-app-key
+              mountPath: /var/secrets/github-app
+              readOnly: true
+            - name: config
+              mountPath: /etc/otto-complete
+              readOnly: true
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: workdir
+          emptyDir: {}
+        - name: docker-storage
+          emptyDir: {}
+        - name: gcp-sa-key
+          secret:
+            secretName: gcp-sa-key
+        - name: github-app-key
+          secret:
+            secretName: github-app-key
+            defaultMode: 0444
+        - name: config
+          configMap:
+            name: otto-complete-config

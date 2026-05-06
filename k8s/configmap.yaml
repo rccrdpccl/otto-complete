@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-complete-config
+  namespace: otto-complete
+data:
+  config.yaml: |
+    repo: openshift-assisted/cluster-api-provider-openshift-assisted
+    clone_url: https://github.com/openshift-assisted/cluster-api-provider-openshift-assisted.git
+    github_app_id: "3619538"
+    github_app_installation_id: "129961408"
+    label: auto-spec
+    specs_dir: specs
+    branch_prefix_spec: spec/
+    branch_prefix_plan: plan/
+    branch_prefix_impl: impl/
+    default_branch: master
+    max_turns_spec: 15
+    max_turns_plan: 20
+    max_turns_impl: 50
+    max_budget_spec: 1.00
+    max_budget_plan: 2.00
+    max_budget_impl: 10.00
+    max_turns_review: 20
+    max_budget_review: 2.00
+    ci_max_retries: 3
+    max_turns_ci_fix: 30
+    max_budget_ci_fix: 5.00
+    poll_interval: 120
+    max_total_budget_usd: 50.00
+    watchers:
+      - project: MGMT
+        component: "Assisted_installer CAPI"
+      - project: ACM
+        component: CAPOA
