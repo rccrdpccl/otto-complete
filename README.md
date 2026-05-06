@@ -1,6 +1,10 @@
-# otto-complete
+<p align="center">
+  <img src="assets/logo.jpg" alt="Otto" width="300">
+</p>
 
-Autonomous JIRA-to-PR pipeline using Spec-Driven Development. A single Python deployment with three bots and an internal polling loop.
+<h1 align="center">otto-complete</h1>
+
+<p align="center">Autonomous JIRA-to-PR pipeline using Spec-Driven Development.<br>A single Python deployment with three bots and an internal polling loop.</p>
 
 ## How It Works
 
