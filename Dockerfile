@@ -16,6 +16,10 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 
 RUN npm install -g @anthropic-ai/claude-code
 
+ARG SUPERPOWERS_VERSION=b7a8f76985f1e93e75dd2f2a3b424dc731bd9d37
+RUN git clone https://github.com/obra/superpowers.git /opt/superpowers \
+    && cd /opt/superpowers && git checkout $SUPERPOWERS_VERSION && rm -rf .git
+
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 

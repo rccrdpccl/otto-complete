@@ -32,6 +32,7 @@ def run_claude(
 
     cmd = [
         "claude", "-p", prompt,
+        "--plugin-dir", "/opt/superpowers",
         "--allowedTools", tools,
         "--max-turns", str(max_turns),
         "--max-budget-usd", str(max_budget),
