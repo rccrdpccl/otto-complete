@@ -7,9 +7,10 @@ from otto_complete.config import load_config, RepoContext
 from otto_complete.logging_setup import setup_logging
 from otto_complete.metrics import start_metrics_server
 from otto_complete.clients.jira import JiraClient
-from otto_complete.clients.github import GitHubClient, set_gh_auth
-from otto_complete.clients.git import GitClient, set_git_auth
+from otto_complete.clients.github import GitHubClient
+from otto_complete.clients.git import GitClient
 from otto_complete.clients.github_auth import GitHubAppAuth
+from otto_complete.clients.auth import PatAuth
 from otto_complete.budget import BudgetTracker
 from otto_complete.claude_runner import set_budget_tracker
 from otto_complete.bots.specifier import SpecifierBot
@@ -19,21 +20,29 @@ from otto_complete.bots.implementer import ImplementerBot
 log = logging.getLogger(__name__)
 
 
-def _init_github_auth(config):
-    if not config.github_app_id:
-        log.info("No GitHub App config — using GITHUB_TOKEN from env")
-        return
-    auth = GitHubAppAuth(
-        app_id=config.github_app_id,
-        private_key_path=config.github_app_private_key_path,
-        installation_id=config.github_app_installation_id,
-    )
-    _ = auth.token
-    log.info("GitHub App auth initialized (app_id=%s, installation=%s)",
-             config.github_app_id, config.github_app_installation_id)
-    set_gh_auth(auth)
-    set_git_auth(auth)
-    auth.start_refresh_thread()
+def _build_auth(config, watcher):
+    if watcher.auth_method == "github_app":
+        if not config.github_app_id:
+            log.warning("Watcher %s uses github_app auth but no GitHub App config found — "
+                        "falling back to GITHUB_TOKEN env var", watcher.project)
+            token = os.environ.get("GITHUB_TOKEN", "")
+            return PatAuth(token) if token else None
+        auth = GitHubAppAuth(
+            app_id=config.github_app_id,
+            private_key_path=config.github_app_private_key_path,
+            installation_id=config.github_app_installation_id,
+        )
+        _ = auth.token
+        log.info("GitHub App auth initialized for watcher %s (app_id=%s)",
+                 watcher.project, config.github_app_id)
+        auth.start_refresh_thread()
+        return auth
+    else:
+        token = os.environ.get(watcher.token_env, "")
+        if not token:
+            raise ValueError(f"Watcher {watcher.project} requires env var {watcher.token_env} but it is empty")
+        log.info("PAT auth initialized for watcher %s (env=%s)", watcher.project, watcher.token_env)
+        return PatAuth(token)
 
 
 def main():
@@ -42,7 +51,6 @@ def main():
 
     config = load_config()
     start_metrics_server(port=9090)
-    _init_github_auth(config)
 
     budget = BudgetTracker(
         max_budget=config.max_total_budget_usd,
@@ -55,8 +63,10 @@ def main():
 
     watcher_bots = []
     for watcher in config.watchers:
-        target_git = GitClient(config.clone_url, config.clone_path, config.default_branch)
-        target_github = GitHubClient(config.repo)
+        auth = _build_auth(config, watcher)
+
+        target_git = GitClient(config.clone_url, config.clone_path, config.default_branch, auth=auth)
+        target_github = GitHubClient(config.repo, auth=auth)
         target_ctx = RepoContext(
             repo=config.repo, clone_url=config.clone_url,
             clone_path=config.clone_path, default_branch=config.default_branch,
@@ -70,8 +80,8 @@ def main():
             ws_specs_dir = f"{config.specs_dir}/{target_repo_name}"
             ws_default_branch = watcher.workspace_default_branch or config.default_branch
 
-            ws_git = GitClient(watcher.workspace_clone_url, ws_clone_path, ws_default_branch)
-            ws_github = GitHubClient(watcher.workspace_repo)
+            ws_git = GitClient(watcher.workspace_clone_url, ws_clone_path, ws_default_branch, auth=auth)
+            ws_github = GitHubClient(watcher.workspace_repo, auth=auth)
             spec_ctx = RepoContext(
                 repo=watcher.workspace_repo, clone_url=watcher.workspace_clone_url,
                 clone_path=ws_clone_path, default_branch=ws_default_branch,
