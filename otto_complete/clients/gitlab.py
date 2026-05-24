@@ -15,6 +15,7 @@ class GitLabClient:
         self.auth = auth
         self.base_url = base_url.rstrip("/")
         self.project_path = quote(repo, safe="")
+        self._last_mr_iid: int | None = None
 
     def _api(self, method: str, path: str, **kwargs) -> requests.Response:
         url = f"{self.base_url}/api/v4{path}"
@@ -66,6 +67,116 @@ class GitLabClient:
 
     def pr_is_merged(self, pr_number: int) -> bool:
         return self.pr_state(pr_number) == "MERGED"
+
+    def _get_all_pages(self, path: str, **kwargs) -> list:
+        results = []
+        params = kwargs.pop("params", {})
+        params.setdefault("per_page", 100)
+        page = 1
+        while True:
+            params["page"] = page
+            resp = self._get(path, params=params, **kwargs)
+            data = resp.json()
+            if not data:
+                break
+            results.extend(data)
+            if len(data) < params["per_page"]:
+                break
+            page += 1
+        return results
+
+    def get_review_threads(self, pr_number: int) -> dict:
+        self._last_mr_iid = pr_number
+        try:
+            discussions = self._get_all_pages(
+                f"/projects/{self.project_path}/merge_requests/{pr_number}/discussions"
+            )
+        except Exception:
+            log.warning("Failed to fetch discussions for MR !%d", pr_number)
+            return {}
+
+        threads = []
+        for disc in discussions:
+            if disc.get("individual_note", False):
+                continue
+            notes = disc.get("notes", [])
+            if not notes:
+                continue
+            resolvable_notes = [n for n in notes if n.get("resolvable", False)]
+            is_resolved = bool(resolvable_notes) and all(n.get("resolved", False) for n in resolvable_notes)
+
+            comment_nodes = []
+            for note in notes:
+                position = note.get("position") or {}
+                comment_nodes.append({
+                    "id": str(note["id"]),
+                    "databaseId": note["id"],
+                    "body": note.get("body", ""),
+                    "author": {"login": note.get("author", {}).get("username", "")},
+                    "path": position.get("new_path"),
+                    "line": position.get("new_line"),
+                })
+
+            threads.append({
+                "id": disc["id"],
+                "isResolved": is_resolved,
+                "comments": {"nodes": comment_nodes},
+            })
+
+        return {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "nodes": threads
+                        }
+                    }
+                }
+            }
+        }
+
+    def _find_discussion_for_note(self, pr_number: int, note_id: int) -> str | None:
+        try:
+            discussions = self._get_all_pages(
+                f"/projects/{self.project_path}/merge_requests/{pr_number}/discussions"
+            )
+            for disc in discussions:
+                for note in disc.get("notes", []):
+                    if note["id"] == note_id:
+                        return disc["id"]
+        except Exception:
+            log.warning("Failed to find discussion for note %d", note_id)
+        return None
+
+    def reply_to_review_comment(self, pr_number: int, comment_id: int, body: str) -> bool:
+        body = f"{body}\n\n{BOT_MARKER}"
+        discussion_id = self._find_discussion_for_note(pr_number, comment_id)
+        if not discussion_id:
+            log.warning("Could not find discussion for comment %d", comment_id)
+            return False
+        try:
+            self._post(
+                f"/projects/{self.project_path}/merge_requests/{pr_number}/discussions/{discussion_id}/notes",
+                json={"body": body},
+            )
+            return True
+        except Exception:
+            log.warning("Failed to reply to comment %d", comment_id)
+            return False
+
+    def resolve_thread(self, thread_id: str) -> bool:
+        if self._last_mr_iid is None:
+            log.warning("Cannot resolve thread %s — no MR context", thread_id)
+            return False
+        try:
+            self._put(
+                f"/projects/{self.project_path}/merge_requests/{self._last_mr_iid}/discussions/{thread_id}",
+                json={"resolved": True},
+            )
+            return True
+        except Exception:
+            log.warning("Failed to resolve thread %s", thread_id)
+            return False
 
     def find_pr_by_branch(self, branch: str) -> int | None:
         try:

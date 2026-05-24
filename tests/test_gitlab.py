@@ -106,3 +106,90 @@ def test_find_pr_by_branch_not_found(mock_request):
     client = GitLabClient("mygroup/myrepo", auth=PatAuth("token"))
     result = client.find_pr_by_branch("nonexistent")
     assert result is None
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_get_review_threads(mock_request):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = [
+        {
+            "id": "disc-abc",
+            "individual_note": False,
+            "notes": [
+                {
+                    "id": 1001,
+                    "body": "Please fix this",
+                    "author": {"username": "reviewer1"},
+                    "resolved": False,
+                    "resolvable": True,
+                    "type": "DiffNote",
+                    "position": {"new_path": "src/main.py", "new_line": 42},
+                }
+            ],
+        },
+        {
+            "id": "disc-def",
+            "individual_note": True,
+            "notes": [{"id": 1002, "body": "general note", "author": {"username": "user2"},
+                        "resolved": False, "resolvable": False, "type": None}],
+        },
+    ]
+    mock_request.return_value = mock_response
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    result = client.get_review_threads(10)
+
+    threads = result["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+    assert len(threads) == 1  # individual_note filtered out
+    t = threads[0]
+    assert t["id"] == "disc-abc"
+    assert t["isResolved"] is False
+    c = t["comments"]["nodes"][0]
+    assert c["databaseId"] == 1001
+    assert c["author"]["login"] == "reviewer1"
+    assert c["path"] == "src/main.py"
+    assert c["line"] == 42
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_reply_to_review_comment(mock_request):
+    disc_response = MagicMock()
+    disc_response.raise_for_status = MagicMock()
+    disc_response.json.return_value = [
+        {"id": "disc-abc", "notes": [{"id": 1001}]},
+        {"id": "disc-def", "notes": [{"id": 1002}]},
+    ]
+
+    reply_response = MagicMock()
+    reply_response.raise_for_status = MagicMock()
+    reply_response.json.return_value = {"id": 2001}
+
+    mock_request.side_effect = [disc_response, reply_response]
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    result = client.reply_to_review_comment(10, 1001, "Fixed!")
+    assert result is True
+
+    reply_call = mock_request.call_args_list[1]
+    assert "disc-abc" in reply_call[0][1]
+
+    from otto_complete.clients.github import BOT_MARKER
+    assert BOT_MARKER in reply_call[1]["json"]["body"]
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_resolve_thread(mock_request):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_request.return_value = mock_response
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    client._last_mr_iid = 10
+    result = client.resolve_thread("disc-abc")
+    assert result is True
+
+    call_args = mock_request.call_args
+    assert call_args[0][0] == "PUT"
+    assert "disc-abc" in call_args[0][1]
+    assert call_args[1]["json"]["resolved"] is True
