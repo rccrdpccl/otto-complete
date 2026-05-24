@@ -63,6 +63,7 @@ class SpecifierBot(BaseBot):
             return
 
         self.spec_ctx.git.ensure_repo_cloned()
+        self.ensure_source_repos_cloned()
         branch = f"{cfg.branch_prefix_spec}{issue_key}"
         self.spec_ctx.git.create_branch(branch)
 
@@ -71,7 +72,8 @@ class SpecifierBot(BaseBot):
 
         prompt = self.render_template("spec-prompt.md",
             ISSUE_KEY=issue_key, SUMMARY=summary,
-            DESCRIPTION=description, SPECS_DIR=self.spec_ctx.specs_dir)
+            DESCRIPTION=description, SPECS_DIR=self.spec_ctx.specs_dir,
+            SOURCE_REPOS=self.format_source_repos_section())
 
         log.info("Running Claude for %s (max %d turns, $%s budget)",
                  issue_key, cfg.max_turns_spec, cfg.max_budget_spec)
@@ -134,11 +136,13 @@ class SpecifierBot(BaseBot):
 
         log.info("%s: found unaddressed review comments on PR #%d", issue_key, pr_number)
         self.spec_ctx.git.ensure_repo_cloned()
+        self.ensure_source_repos_cloned()
         self.spec_ctx.git.checkout_branch(branch)
 
         formatted = format_comments_for_prompt(comments)
         prompt = self.render_template("spec-review-prompt.md",
-            ISSUE_KEY=issue_key, SPECS_DIR=self.spec_ctx.specs_dir, COMMENTS=formatted)
+            ISSUE_KEY=issue_key, SPECS_DIR=self.spec_ctx.specs_dir, COMMENTS=formatted,
+            SOURCE_REPOS=self.format_source_repos_section())
 
         log.info("Running Claude for %s review (max %d turns, $%s budget)",
                  issue_key, cfg.max_turns_review, cfg.max_budget_review)
