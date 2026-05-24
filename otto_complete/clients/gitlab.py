@@ -215,6 +215,32 @@ class GitLabClient:
             log.warning("Failed to comment on MR !%d", pr_number)
             return False
 
+    def add_reaction(self, comment_id: int, reaction: str = "eyes") -> bool:
+        if self._last_mr_iid is None:
+            log.warning("Cannot add reaction — no MR context")
+            return False
+        try:
+            self._post(
+                f"/projects/{self.project_path}/merge_requests/{self._last_mr_iid}/notes/{comment_id}/award_emoji",
+                json={"name": reaction},
+            )
+            return True
+        except Exception:
+            log.warning("Failed to react to comment %d", comment_id)
+            return False
+
+    def comment_has_reaction(self, comment_id: int, reaction: str = "eyes") -> bool:
+        if self._last_mr_iid is None:
+            return False
+        try:
+            resp = self._get(
+                f"/projects/{self.project_path}/merge_requests/{self._last_mr_iid}/notes/{comment_id}/award_emoji"
+            )
+            emojis = resp.json()
+            return any(e.get("name") == reaction for e in emojis)
+        except Exception:
+            return False
+
     def find_pr_by_branch(self, branch: str) -> int | None:
         try:
             resp = self._get(

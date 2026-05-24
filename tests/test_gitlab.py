@@ -243,3 +243,44 @@ def test_comment_on_pr(mock_request):
 
     from otto_complete.clients.github import BOT_MARKER
     assert BOT_MARKER in body
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_add_reaction(mock_request):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_request.return_value = mock_response
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    client._last_mr_iid = 10
+    result = client.add_reaction(501, "eyes")
+    assert result is True
+
+    call_args = mock_request.call_args
+    assert call_args[0][0] == "POST"
+    assert "/notes/501/award_emoji" in call_args[0][1]
+    assert call_args[1]["json"]["name"] == "eyes"
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_comment_has_reaction_true(mock_request):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = [{"name": "eyes"}, {"name": "thumbsup"}]
+    mock_request.return_value = mock_response
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    client._last_mr_iid = 10
+    assert client.comment_has_reaction(501, "eyes") is True
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_comment_has_reaction_false(mock_request):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = [{"name": "thumbsup"}]
+    mock_request.return_value = mock_response
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    client._last_mr_iid = 10
+    assert client.comment_has_reaction(501, "eyes") is False
