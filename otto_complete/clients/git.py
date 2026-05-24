@@ -2,8 +2,6 @@ import logging
 import os
 import subprocess
 
-from otto_complete.config import Config
-
 log = logging.getLogger(__name__)
 
 _gh_auth = None
@@ -33,80 +31,78 @@ def _authed_url(url: str) -> str:
 
 
 class GitClient:
-    def __init__(self, config: Config):
-        self.config = config
+    def __init__(self, clone_url: str, clone_path: str, default_branch: str):
+        self.clone_url = clone_url
+        self.clone_path = clone_path
+        self.default_branch = default_branch
 
     def ensure_repo_cloned(self):
-        cfg = self.config
-        os.makedirs(cfg.work_dir, exist_ok=True)
+        work_dir = os.path.dirname(self.clone_path)
+        os.makedirs(work_dir, exist_ok=True)
 
-        clone_url = _authed_url(cfg.clone_url)
+        clone_url = _authed_url(self.clone_url)
 
-        if os.path.isdir(os.path.join(cfg.clone_path, ".git")):
-            log.info("Updating existing clone: %s", cfg.clone_path)
+        if os.path.isdir(os.path.join(self.clone_path, ".git")):
+            log.info("Updating existing clone: %s", self.clone_path)
             self._update_remotes()
-            _git(cfg.clone_path, "fetch", "origin")
-            _git(cfg.clone_path, "checkout", cfg.default_branch)
-            _git(cfg.clone_path, "reset", "--hard", f"origin/{cfg.default_branch}")
+            _git(self.clone_path, "fetch", "origin")
+            _git(self.clone_path, "checkout", self.default_branch)
+            _git(self.clone_path, "reset", "--hard", f"origin/{self.default_branch}")
         else:
-            log.info("Cloning %s -> %s", cfg.clone_url, cfg.clone_path)
+            log.info("Cloning %s -> %s", self.clone_url, self.clone_path)
             env = None
             if _gh_auth is not None:
                 env = {**os.environ, "GIT_ASKPASS": "echo", "GIT_TERMINAL_PROMPT": "0"}
             subprocess.run(
-                ["git", "clone", clone_url, cfg.clone_path],
+                ["git", "clone", clone_url, self.clone_path],
                 capture_output=True, text=True, timeout=600, check=True,
                 env=env,
             )
 
     def _update_remotes(self):
-        cfg = self.config
         if _gh_auth is None:
             return
-        origin_url = _authed_url(cfg.clone_url)
-        _git(cfg.clone_path, "remote", "set-url", "origin", origin_url)
+        origin_url = _authed_url(self.clone_url)
+        _git(self.clone_path, "remote", "set-url", "origin", origin_url)
 
     def create_branch(self, branch: str):
-        cfg = self.config
-        _git(cfg.clone_path, "checkout", cfg.default_branch)
-        _git(cfg.clone_path, "checkout", "-b", branch)
+        _git(self.clone_path, "checkout", self.default_branch)
+        _git(self.clone_path, "checkout", "-b", branch)
 
     def checkout_branch(self, branch: str):
-        cfg = self.config
         self._update_remotes()
-        _git(cfg.clone_path, "fetch", "origin")
-        _git(cfg.clone_path, "checkout", branch)
-        _git(cfg.clone_path, "pull", "origin", branch)
+        _git(self.clone_path, "fetch", "origin")
+        _git(self.clone_path, "checkout", branch)
+        _git(self.clone_path, "pull", "origin", branch)
 
     def status(self, pathspec: str = "") -> str:
         args = ["status", "--porcelain"]
         if pathspec:
             args += ["--", pathspec]
-        result = _git(self.config.clone_path, *args)
+        result = _git(self.clone_path, *args)
         return result.stdout.strip()
 
     def add(self, path: str = "."):
         if path == ".":
-            _git(self.config.clone_path, "add", "-A")
+            _git(self.clone_path, "add", "-A")
         else:
-            _git(self.config.clone_path, "add", path)
+            _git(self.clone_path, "add", path)
 
     def commit(self, message: str):
-        _git(self.config.clone_path, "commit", "-m", message)
+        _git(self.clone_path, "commit", "-m", message)
 
     def push_branch(self, branch: str, force: bool = False):
-        cfg = self.config
         self._update_remotes()
         args = ["push", "-u", "origin", branch]
         if force:
             args.append("--force-with-lease")
-        result = _git(cfg.clone_path, *args, timeout=120)
+        result = _git(self.clone_path, *args, timeout=120)
         if result.returncode != 0:
             log.warning("Push failed: %s", result.stderr.strip())
             return False
         return True
 
     def remove_file(self, path: str):
-        full_path = os.path.join(self.config.clone_path, path)
+        full_path = os.path.join(self.clone_path, path)
         if os.path.exists(full_path):
             os.remove(full_path)
