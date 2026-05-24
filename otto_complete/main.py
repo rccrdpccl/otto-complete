@@ -8,6 +8,7 @@ from otto_complete.logging_setup import setup_logging
 from otto_complete.metrics import start_metrics_server
 from otto_complete.clients.jira import JiraClient
 from otto_complete.clients.github import GitHubClient
+from otto_complete.clients.gitlab import GitLabClient
 from otto_complete.clients.git import GitClient
 from otto_complete.clients.github_auth import GitHubAppAuth
 from otto_complete.clients.auth import PatAuth
@@ -66,7 +67,10 @@ def main():
         auth = _build_auth(config, watcher)
 
         target_git = GitClient(config.clone_url, config.clone_path, config.default_branch, auth=auth)
-        target_github = GitHubClient(config.repo, auth=auth)
+        if watcher.platform == "gitlab":
+            target_github = GitLabClient(config.repo, auth=auth, base_url=watcher.gitlab_url)
+        else:
+            target_github = GitHubClient(config.repo, auth=auth)
         target_ctx = RepoContext(
             repo=config.repo, clone_url=config.clone_url,
             clone_path=config.clone_path, default_branch=config.default_branch,
@@ -81,7 +85,10 @@ def main():
             ws_default_branch = watcher.workspace_default_branch or config.default_branch
 
             ws_git = GitClient(watcher.workspace_clone_url, ws_clone_path, ws_default_branch, auth=auth)
-            ws_github = GitHubClient(watcher.workspace_repo, auth=auth)
+            if watcher.platform == "gitlab":
+                ws_github = GitLabClient(watcher.workspace_repo, auth=auth, base_url=watcher.gitlab_url)
+            else:
+                ws_github = GitHubClient(watcher.workspace_repo, auth=auth)
             spec_ctx = RepoContext(
                 repo=watcher.workspace_repo, clone_url=watcher.workspace_clone_url,
                 clone_path=ws_clone_path, default_branch=ws_default_branch,
