@@ -3,14 +3,15 @@ import logging
 import os
 import re
 
-from otto_complete.clients.github import GitHubClient, BOT_MARKER
+from otto_complete.clients.github import BOT_MARKER
+from otto_complete.clients.platform import CodePlatform
 
 log = logging.getLogger(__name__)
 
 BOT_ACCOUNT_PATTERN = re.compile(r"\[bot\]$|^(coderabbitai|openshift-ci-robot|openshift-merge-robot)$")
 
 
-def collect_unaddressed_comments(github: GitHubClient, pr_number: int) -> list[dict]:
+def collect_unaddressed_comments(github: CodePlatform, pr_number: int) -> list[dict]:
     threads_data = github.get_review_threads(pr_number)
     review_comments = []
 
@@ -86,7 +87,7 @@ def format_comments_for_prompt(comments: list[dict]) -> str:
 
 
 def post_review_replies(
-    github: GitHubClient,
+    github: CodePlatform,
     issue_key: str,
     pr_number: int,
     original_comments: list[dict],
@@ -131,7 +132,7 @@ def post_review_replies(
     mark_issue_comments_seen(github, original_comments)
 
 
-def auto_resolve_review_threads(github: GitHubClient, pr_number: int, original_comments: list[dict]):
+def auto_resolve_review_threads(github: CodePlatform, pr_number: int, original_comments: list[dict]):
     if not original_comments:
         return
 
@@ -149,7 +150,7 @@ def auto_resolve_review_threads(github: GitHubClient, pr_number: int, original_c
             github.resolve_thread(thread_id)
 
 
-def mark_issue_comments_seen(github: GitHubClient, comments: list[dict]):
+def mark_issue_comments_seen(github: CodePlatform, comments: list[dict]):
     if not comments:
         return
     for c in comments:
@@ -157,7 +158,7 @@ def mark_issue_comments_seen(github: GitHubClient, comments: list[dict]):
             github.add_reaction(c["comment_id"], "eyes")
 
 
-def _post_fallback_replies(github: GitHubClient, pr_number: int, comments: list[dict]):
+def _post_fallback_replies(github: CodePlatform, pr_number: int, comments: list[dict]):
     fallback_msg = f"Acknowledged — I reviewed this feedback but could not determine how to address it with code changes. Leaving for maintainer review.\n\n{BOT_MARKER}"
     threads_data = None
     for c in comments:
