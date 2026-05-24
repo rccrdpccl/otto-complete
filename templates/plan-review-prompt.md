@@ -6,6 +6,8 @@ You are addressing review comments on an implementation plan PR. Your goal is to
 
 The plan is at `{{SPECS_DIR}}/{{ISSUE_KEY}}/plan.md` and tasks at `{{SPECS_DIR}}/{{ISSUE_KEY}}/tasks.md`. Read them first.
 
+{{SOURCE_REPOS}}
+
 ## Review Comments to Address
 
 {{COMMENTS}}

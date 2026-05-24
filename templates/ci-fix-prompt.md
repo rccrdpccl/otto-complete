@@ -8,6 +8,8 @@ You are fixing CI failures on an implementation PR. Analyze the failures and eit
 
 The spec is at `{{SPECS_DIR}}/{{ISSUE_KEY}}/spec.md` and the plan at `{{SPECS_DIR}}/{{ISSUE_KEY}}/plan.md`. Read them for context.
 
+{{SOURCE_REPOS}}
+
 ## Failed CI Checks
 
 {{FAILED_CHECKS}}

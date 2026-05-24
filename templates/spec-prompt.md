@@ -6,6 +6,8 @@ You are writing a formal specification for a JIRA issue. This is the FIRST stage
 **Description:**
 {{DESCRIPTION}}
 
+{{SOURCE_REPOS}}
+
 ## Instructions
 
 1. Read the JIRA issue carefully

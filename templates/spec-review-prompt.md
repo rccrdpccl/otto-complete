@@ -6,6 +6,8 @@ You are addressing review comments on a specification PR. Your goal is to evalua
 
 The spec is at `{{SPECS_DIR}}/{{ISSUE_KEY}}/spec.md`. Read it first.
 
+{{SOURCE_REPOS}}
+
 ## Review Comments to Address
 
 {{COMMENTS}}

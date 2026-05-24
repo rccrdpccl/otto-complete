@@ -3,6 +3,8 @@ You are creating an implementation plan from an approved specification. This is 
 ## JIRA Issue: {{ISSUE_KEY}}
 ## Approved Specification: {{SPECS_DIR}}/{{ISSUE_KEY}}/spec.md
 
+{{SOURCE_REPOS}}
+
 ## Instructions
 
 1. Read the specification document carefully — it is the source of truth for WHAT to build

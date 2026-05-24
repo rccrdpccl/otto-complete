@@ -5,6 +5,8 @@ You are implementing an approved plan. This is the THIRD stage of Spec-Driven De
 ## Plan: {{SPEC_PATH}}/plan.md
 ## Tasks: {{SPEC_PATH}}/tasks.md
 
+{{SOURCE_REPOS}}
+
 ## Repository Conventions
 
 Before implementing, check if the repository root contains a `CLAUDE.md` or `AGENT.md` file. If it exists, read it and follow its conventions and instructions.

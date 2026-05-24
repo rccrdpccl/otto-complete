@@ -6,6 +6,8 @@ You are addressing review comments on an implementation PR. Your goal is to eval
 
 The spec is at `{{SPECS_DIR}}/{{ISSUE_KEY}}/spec.md` and the plan at `{{SPECS_DIR}}/{{ISSUE_KEY}}/plan.md`. Read them for context.
 
+{{SOURCE_REPOS}}
+
 ## Review Comments to Address
 
 {{COMMENTS}}
