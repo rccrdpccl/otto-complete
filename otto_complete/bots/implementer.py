@@ -114,6 +114,7 @@ class ImplementerBot(BaseBot):
 
         self.spec_ctx.git.ensure_repo_cloned()
         self.impl_ctx.git.ensure_repo_cloned()
+        self.ensure_source_repos_cloned()
         branch = f"{cfg.branch_prefix_impl}{issue_key}"
         self.impl_ctx.git.create_branch(branch)
 
@@ -131,7 +132,8 @@ class ImplementerBot(BaseBot):
             spec_path = os.path.join(self.spec_ctx.specs_dir, issue_key)
 
         prompt = self.render_template("implement-prompt.md",
-            ISSUE_KEY=issue_key, SPEC_PATH=spec_path)
+            ISSUE_KEY=issue_key, SPEC_PATH=spec_path,
+            SOURCE_REPOS=self.format_source_repos_section())
 
         log.info("Running Claude for %s (max %d turns, $%s budget)",
                  issue_key, cfg.max_turns_impl, cfg.max_budget_impl)
@@ -232,6 +234,7 @@ class ImplementerBot(BaseBot):
         cfg = self.config
 
         self.impl_ctx.git.ensure_repo_cloned()
+        self.ensure_source_repos_cloned()
         self.impl_ctx.git.checkout_branch(impl_branch)
 
         analysis_file = os.path.join(self.spec_dir(issue_key), "ci-analysis.json")
@@ -255,7 +258,8 @@ class ImplementerBot(BaseBot):
             PR_NUMBER=str(pr_number), ATTEMPT_NUMBER=str(attempt_number),
             MAX_ATTEMPTS=str(cfg.ci_max_retries),
             FAILED_CHECKS=failed_checks_text,
-            LOG_URLS=log_urls)
+            LOG_URLS=log_urls,
+            SOURCE_REPOS=self.format_source_repos_section())
 
         log.info("Running Claude for %s CI fix (attempt %d, max %d turns, $%s budget)",
                  issue_key, attempt_number, cfg.max_turns_ci_fix, cfg.max_budget_ci_fix)
@@ -335,6 +339,7 @@ class ImplementerBot(BaseBot):
 
         log.info("%s: found unaddressed review comments on impl PR #%d", issue_key, pr_number)
         self.impl_ctx.git.ensure_repo_cloned()
+        self.ensure_source_repos_cloned()
         self.impl_ctx.git.checkout_branch(impl_branch)
 
         replies_file_path = self.replies_file(issue_key)
@@ -350,7 +355,8 @@ class ImplementerBot(BaseBot):
             specs_dir_for_prompt = self.spec_ctx.specs_dir
 
         prompt = self.render_template("impl-review-prompt.md",
-            ISSUE_KEY=issue_key, SPECS_DIR=specs_dir_for_prompt, COMMENTS=formatted)
+            ISSUE_KEY=issue_key, SPECS_DIR=specs_dir_for_prompt, COMMENTS=formatted,
+            SOURCE_REPOS=self.format_source_repos_section())
 
         log.info("Running Claude for %s impl review (max %d turns, $%s budget)",
                  issue_key, cfg.max_turns_review, cfg.max_budget_review)
