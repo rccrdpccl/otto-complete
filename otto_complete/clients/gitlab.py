@@ -241,6 +241,77 @@ class GitLabClient:
         except Exception:
             return False
 
+    _JOB_STATUS_TO_BUCKET = {
+        "success": "pass",
+        "failed": "fail",
+        "canceled": "fail",
+        "pending": "pending",
+        "running": "pending",
+        "created": "pending",
+        "waiting_for_resource": "pending",
+        "preparing": "pending",
+        "skipped": "skipping",
+        "manual": "skipping",
+    }
+
+    def get_pr_checks(self, pr_number: int) -> list[dict]:
+        try:
+            resp = self._get(
+                f"/projects/{self.project_path}/merge_requests/{pr_number}/pipelines"
+            )
+            pipelines = resp.json()
+            if not pipelines:
+                return []
+
+            latest_pipeline_id = pipelines[0]["id"]
+            resp = self._get(
+                f"/projects/{self.project_path}/pipelines/{latest_pipeline_id}/jobs",
+                params={"per_page": 100},
+            )
+            jobs = resp.json()
+        except Exception:
+            log.warning("Failed to fetch CI checks for MR !%d", pr_number)
+            return []
+
+        checks = []
+        for job in jobs:
+            status = job.get("status", "unknown")
+            checks.append({
+                "name": job.get("name", "unknown"),
+                "bucket": self._JOB_STATUS_TO_BUCKET.get(status, "pending"),
+                "state": status,
+                "description": job.get("stage", ""),
+                "link": job.get("web_url", ""),
+                "completedAt": job.get("finished_at") or "",
+            })
+        return checks
+
+    def get_failed_checks(self, pr_number: int) -> list[dict]:
+        checks = self.get_pr_checks(pr_number)
+        return [c for c in checks if c.get("bucket") == "fail"]
+
+    def checks_are_pending(self, pr_number: int) -> bool:
+        checks = self.get_pr_checks(pr_number)
+        if not checks:
+            return True
+        return any(c.get("bucket") == "pending" for c in checks)
+
+    def all_checks_pass(self, pr_number: int) -> bool:
+        checks = self.get_pr_checks(pr_number)
+        if not checks:
+            return False
+        return all(c.get("bucket") in ("pass", "skipping") for c in checks)
+
+    def format_failed_checks(self, failed_checks: list[dict]) -> str:
+        lines = []
+        for c in failed_checks:
+            lines.append(f"### Check: {c.get('name', 'unknown')}")
+            lines.append(f"- **Status:** {c.get('state', 'unknown')}")
+            lines.append(f"- **Description:** {c.get('description') or 'none'}")
+            lines.append(f"- **Log URL:** {c.get('link') or 'none'}")
+            lines.append("\n---\n")
+        return "\n".join(lines) if lines else "No failed check details available."
+
     def find_pr_by_branch(self, branch: str) -> int | None:
         try:
             resp = self._get(

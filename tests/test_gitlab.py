@@ -284,3 +284,106 @@ def test_comment_has_reaction_false(mock_request):
     client = GitLabClient("g/r", auth=PatAuth("token"))
     client._last_mr_iid = 10
     assert client.comment_has_reaction(501, "eyes") is False
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_get_pr_checks(mock_request):
+    pipeline_response = MagicMock()
+    pipeline_response.raise_for_status = MagicMock()
+    pipeline_response.json.return_value = [{"id": 100, "status": "failed"}]
+
+    jobs_response = MagicMock()
+    jobs_response.raise_for_status = MagicMock()
+    jobs_response.json.return_value = [
+        {
+            "name": "unit-tests",
+            "status": "failed",
+            "stage": "test",
+            "web_url": "https://gitlab.com/g/r/-/jobs/201",
+            "finished_at": "2026-05-24T10:00:00Z",
+        },
+        {
+            "name": "lint",
+            "status": "success",
+            "stage": "test",
+            "web_url": "https://gitlab.com/g/r/-/jobs/202",
+            "finished_at": "2026-05-24T09:55:00Z",
+        },
+        {
+            "name": "deploy",
+            "status": "skipped",
+            "stage": "deploy",
+            "web_url": "https://gitlab.com/g/r/-/jobs/203",
+            "finished_at": None,
+        },
+    ]
+
+    mock_request.side_effect = [pipeline_response, jobs_response]
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    checks = client.get_pr_checks(10)
+
+    assert len(checks) == 3
+    assert checks[0]["name"] == "unit-tests"
+    assert checks[0]["bucket"] == "fail"
+    assert checks[0]["link"] == "https://gitlab.com/g/r/-/jobs/201"
+    assert checks[1]["bucket"] == "pass"
+    assert checks[2]["bucket"] == "skipping"
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_get_failed_checks(mock_request):
+    pipeline_response = MagicMock()
+    pipeline_response.raise_for_status = MagicMock()
+    pipeline_response.json.return_value = [{"id": 100}]
+
+    jobs_response = MagicMock()
+    jobs_response.raise_for_status = MagicMock()
+    jobs_response.json.return_value = [
+        {"name": "test", "status": "failed", "stage": "test", "web_url": "", "finished_at": ""},
+        {"name": "lint", "status": "success", "stage": "test", "web_url": "", "finished_at": ""},
+    ]
+
+    mock_request.side_effect = [pipeline_response, jobs_response]
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    failed = client.get_failed_checks(10)
+    assert len(failed) == 1
+    assert failed[0]["name"] == "test"
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_checks_are_pending_running(mock_request):
+    pipeline_response = MagicMock()
+    pipeline_response.raise_for_status = MagicMock()
+    pipeline_response.json.return_value = [{"id": 100}]
+
+    jobs_response = MagicMock()
+    jobs_response.raise_for_status = MagicMock()
+    jobs_response.json.return_value = [
+        {"name": "test", "status": "running", "stage": "test", "web_url": "", "finished_at": None},
+    ]
+
+    mock_request.side_effect = [pipeline_response, jobs_response]
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    assert client.checks_are_pending(10) is True
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_all_checks_pass(mock_request):
+    pipeline_response = MagicMock()
+    pipeline_response.raise_for_status = MagicMock()
+    pipeline_response.json.return_value = [{"id": 100}]
+
+    jobs_response = MagicMock()
+    jobs_response.raise_for_status = MagicMock()
+    jobs_response.json.return_value = [
+        {"name": "test", "status": "success", "stage": "test", "web_url": "", "finished_at": ""},
+        {"name": "lint", "status": "success", "stage": "test", "web_url": "", "finished_at": ""},
+    ]
+
+    mock_request.side_effect = [pipeline_response, jobs_response]
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    assert client.all_checks_pass(10) is True
