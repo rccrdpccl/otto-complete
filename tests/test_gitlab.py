@@ -193,3 +193,53 @@ def test_resolve_thread(mock_request):
     assert call_args[0][0] == "PUT"
     assert "disc-abc" in call_args[0][1]
     assert call_args[1]["json"]["resolved"] is True
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_get_pr_comments(mock_request):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = [
+        {
+            "id": 501,
+            "body": "Looks good!",
+            "author": {"username": "reviewer1"},
+            "system": False,
+        },
+        {
+            "id": 502,
+            "body": "CI passed",
+            "author": {"username": "gitlab-bot"},
+            "system": True,
+        },
+    ]
+    mock_request.return_value = mock_response
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    comments = client.get_pr_comments(10)
+
+    assert len(comments) == 1  # system notes filtered out
+    c = comments[0]
+    assert c["id"] == 501
+    assert c["body"] == "Looks good!"
+    assert c["user"]["login"] == "reviewer1"
+    assert c["user"]["type"] == "User"
+
+
+@patch("otto_complete.clients.gitlab.requests.request")
+def test_comment_on_pr(mock_request):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_request.return_value = mock_response
+
+    client = GitLabClient("g/r", auth=PatAuth("token"))
+    result = client.comment_on_pr(10, "Great work!")
+    assert result is True
+
+    call_args = mock_request.call_args
+    assert call_args[0][0] == "POST"
+    body = call_args[1]["json"]["body"]
+    assert "Great work!" in body
+
+    from otto_complete.clients.github import BOT_MARKER
+    assert BOT_MARKER in body

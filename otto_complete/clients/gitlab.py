@@ -178,6 +178,43 @@ class GitLabClient:
             log.warning("Failed to resolve thread %s", thread_id)
             return False
 
+    def get_pr_comments(self, pr_number: int) -> list[dict]:
+        try:
+            notes = self._get_all_pages(
+                f"/projects/{self.project_path}/merge_requests/{pr_number}/notes",
+                params={"sort": "asc"},
+            )
+        except Exception:
+            log.warning("Failed to fetch comments for MR !%d", pr_number)
+            return []
+
+        comments = []
+        for note in notes:
+            if note.get("system", False):
+                continue
+            author = note.get("author", {})
+            comments.append({
+                "id": note["id"],
+                "body": note.get("body", ""),
+                "user": {
+                    "login": author.get("username", ""),
+                    "type": "Bot" if "bot" in author.get("username", "").lower() else "User",
+                },
+            })
+        return comments
+
+    def comment_on_pr(self, pr_number: int, body: str) -> bool:
+        body = f"{body}\n\n{BOT_MARKER}"
+        try:
+            self._post(
+                f"/projects/{self.project_path}/merge_requests/{pr_number}/notes",
+                json={"body": body},
+            )
+            return True
+        except Exception:
+            log.warning("Failed to comment on MR !%d", pr_number)
+            return False
+
     def find_pr_by_branch(self, branch: str) -> int | None:
         try:
             resp = self._get(
