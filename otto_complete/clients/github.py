@@ -3,8 +3,6 @@ import logging
 import os
 import subprocess
 
-from otto_complete.config import Config
-
 log = logging.getLogger(__name__)
 
 BOT_MARKER = "<!-- otto-complete -->"
@@ -30,8 +28,8 @@ def _run_gh(*args, **kwargs) -> str:
 
 
 class GitHubClient:
-    def __init__(self, config: Config):
-        self.repo = config.repo
+    def __init__(self, repo: str):
+        self.repo = repo
 
     def create_pr(self, branch: str, title: str, body: str, base: str = "", labels: str = "") -> str:
         args = ["pr", "create", "--repo", self.repo, "--head", branch, "--title", title, "--body", body]
