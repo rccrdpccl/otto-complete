@@ -3,7 +3,7 @@ import os
 import signal
 import threading
 
-from otto_complete.config import load_config, RepoContext
+from otto_complete.config import load_config, RepoContext, SourceRepo
 from otto_complete.logging_setup import setup_logging
 from otto_complete.metrics import start_metrics_server
 from otto_complete.clients.jira import JiraClient
@@ -43,6 +43,29 @@ def _build_auth(config, watcher):
         if not token:
             raise ValueError(f"Watcher {watcher.project} requires env var {watcher.token_env} but it is empty")
         log.info("PAT auth initialized for watcher %s (env=%s)", watcher.project, watcher.token_env)
+        return PatAuth(token)
+
+
+def _build_source_auth(config, src_cfg):
+    if src_cfg.auth_method == "github_app":
+        if not config.github_app_id:
+            token = os.environ.get("GITHUB_TOKEN", "")
+            return PatAuth(token) if token else None
+        auth = GitHubAppAuth(
+            app_id=config.github_app_id,
+            private_key_path=config.github_app_private_key_path,
+            installation_id=config.github_app_installation_id,
+        )
+        _ = auth.token
+        auth.start_refresh_thread()
+        return auth
+    else:
+        token = os.environ.get(src_cfg.token_env, "")
+        if not token:
+            raise ValueError(
+                f"Source repo {src_cfg.repo} requires env var "
+                f"{src_cfg.token_env} but it is empty"
+            )
         return PatAuth(token)
 
 
@@ -101,11 +124,29 @@ def main():
         else:
             spec_ctx = target_ctx
 
+        source_repos = []
+        for src_cfg in watcher.source_repos:
+            src_auth = _build_source_auth(config, src_cfg)
+            src_dir_name = src_cfg.repo.replace("/", "--")
+            src_clone_path = os.path.join(config.work_dir, f"source-{src_dir_name}")
+            src_branch = src_cfg.branch or "main"
+            src_git = GitClient(src_cfg.clone_url, src_clone_path, src_branch, auth=src_auth)
+            source_repos.append(SourceRepo(
+                repo=src_cfg.repo, clone_path=src_clone_path,
+                branch=src_branch, git=src_git,
+            ))
+        if source_repos:
+            log.info("Watcher %s%s: %d source repo(s): %s",
+                     watcher.project,
+                     f"/{watcher.component}" if watcher.component else "",
+                     len(source_repos),
+                     ", ".join(s.repo for s in source_repos))
+
         watcher_bots.append((
             watcher,
-            SpecifierBot(config, jira, spec_ctx, target_ctx),
-            PlannerBot(config, jira, spec_ctx, target_ctx),
-            ImplementerBot(config, jira, spec_ctx, target_ctx),
+            SpecifierBot(config, jira, spec_ctx, target_ctx, source_repos),
+            PlannerBot(config, jira, spec_ctx, target_ctx, source_repos),
+            ImplementerBot(config, jira, spec_ctx, target_ctx, source_repos),
         ))
 
     shutdown = threading.Event()
