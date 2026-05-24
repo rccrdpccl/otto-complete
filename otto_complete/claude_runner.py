@@ -3,7 +3,6 @@ import logging
 import subprocess
 
 from otto_complete.budget import BudgetTracker
-from otto_complete.config import Config
 from otto_complete.metrics import record_run
 
 log = logging.getLogger(__name__)
@@ -17,13 +16,13 @@ def set_budget_tracker(tracker: BudgetTracker):
 
 
 def run_claude(
-    config: Config,
     bot: str,
     issue_key: str,
     prompt: str,
     tools: str,
     max_turns: int,
     max_budget: str,
+    clone_path: str,
 ) -> tuple[int, dict]:
     if _budget and not _budget.can_spend(float(max_budget)):
         log.warning("Global budget exhausted ($%.2f / $%.2f) — skipping %s/%s",
@@ -44,7 +43,7 @@ def run_claude(
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True,
-            cwd=config.clone_path, timeout=1800,
+            cwd=clone_path, timeout=1800,
         )
         exit_code = result.returncode
         output = {}
