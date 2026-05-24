@@ -1,9 +1,9 @@
 You are implementing an approved plan. This is the THIRD stage of Spec-Driven Development.
 
 ## JIRA Issue: {{ISSUE_KEY}}
-## Specification: {{SPECS_DIR}}/{{ISSUE_KEY}}/spec.md
-## Plan: {{SPECS_DIR}}/{{ISSUE_KEY}}/plan.md
-## Tasks: {{SPECS_DIR}}/{{ISSUE_KEY}}/tasks.md
+## Specification: {{SPEC_PATH}}/spec.md
+## Plan: {{SPEC_PATH}}/plan.md
+## Tasks: {{SPEC_PATH}}/tasks.md
 
 ## Repository Conventions
 
