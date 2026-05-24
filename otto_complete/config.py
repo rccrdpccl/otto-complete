@@ -41,6 +41,7 @@ class Watcher:
     auth_method: str = ""
     token_env: str = ""
     gitlab_url: str = ""
+    source_repos: list[SourceRepoConfig] = field(default_factory=list)
 
 
 @dataclass
@@ -129,6 +130,26 @@ def load_config() -> Config:
             default_token_env = "GITHUB_TOKEN"
             default_gitlab_url = ""
 
+        source_repo_configs = []
+        for src in w.get("source_repos", []):
+            src_auth = src.get("auth", {})
+            src_platform = src.get("platform", "github")
+            if src_platform == "gitlab":
+                src_default_token = "GITLAB_TOKEN"
+                src_default_gitlab_url = "https://gitlab.com"
+            else:
+                src_default_token = "GITHUB_TOKEN"
+                src_default_gitlab_url = ""
+            source_repo_configs.append(SourceRepoConfig(
+                repo=src["repo"],
+                clone_url=src["clone_url"],
+                branch=src.get("branch", ""),
+                platform=src_platform,
+                auth_method=src_auth.get("method", "pat"),
+                token_env=src_auth.get("token_env", src_default_token),
+                gitlab_url=src.get("gitlab_url", src_default_gitlab_url),
+            ))
+
         watchers.append(Watcher(
             project=w["project"],
             component=w.get("component", ""),
@@ -139,6 +160,7 @@ def load_config() -> Config:
             auth_method=auth_block.get("method", default_method),
             token_env=auth_block.get("token_env", default_token_env),
             gitlab_url=w.get("gitlab_url", default_gitlab_url),
+            source_repos=source_repo_configs,
         ))
 
     known_fields = {f.name for f in Config.__dataclass_fields__.values()}
