@@ -8,7 +8,7 @@ import yaml
 
 if TYPE_CHECKING:
     from otto_complete.clients.git import GitClient
-    from otto_complete.clients.github import GitHubClient
+    from otto_complete.clients.platform import CodePlatform
 
 
 @dataclass
@@ -18,6 +18,10 @@ class Watcher:
     workspace_repo: str = ""
     workspace_clone_url: str = ""
     workspace_default_branch: str = ""
+    platform: str = "github"
+    auth_method: str = ""
+    token_env: str = ""
+    gitlab_url: str = ""
 
 
 @dataclass
@@ -84,7 +88,7 @@ class RepoContext:
     default_branch: str
     specs_dir: str
     git: GitClient
-    github: GitHubClient
+    github: CodePlatform
 
 
 def load_config() -> Config:
@@ -92,16 +96,31 @@ def load_config() -> Config:
     with open(config_path) as f:
         raw = yaml.safe_load(f)
 
-    watchers = [
-        Watcher(
+    watchers = []
+    for w in raw.pop("watchers", []):
+        auth_block = w.get("auth", {})
+        platform = w.get("platform", "github")
+
+        if platform == "gitlab":
+            default_method = "pat"
+            default_token_env = "GITLAB_TOKEN"
+            default_gitlab_url = "https://gitlab.com"
+        else:
+            default_method = "github_app"
+            default_token_env = "GITHUB_TOKEN"
+            default_gitlab_url = ""
+
+        watchers.append(Watcher(
             project=w["project"],
             component=w.get("component", ""),
             workspace_repo=w.get("workspace_repo", ""),
             workspace_clone_url=w.get("workspace_clone_url", ""),
             workspace_default_branch=w.get("workspace_default_branch", ""),
-        )
-        for w in raw.pop("watchers", [])
-    ]
+            platform=platform,
+            auth_method=auth_block.get("method", default_method),
+            token_env=auth_block.get("token_env", default_token_env),
+            gitlab_url=w.get("gitlab_url", default_gitlab_url),
+        ))
 
     known_fields = {f.name for f in Config.__dataclass_fields__.values()}
     filtered = {k: v for k, v in raw.items() if k in known_fields}
