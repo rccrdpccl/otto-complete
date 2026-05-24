@@ -12,6 +12,25 @@ if TYPE_CHECKING:
 
 
 @dataclass
+class SourceRepoConfig:
+    repo: str
+    clone_url: str
+    branch: str = ""
+    platform: str = "github"
+    auth_method: str = "pat"
+    token_env: str = ""
+    gitlab_url: str = ""
+
+
+@dataclass
+class SourceRepo:
+    repo: str
+    clone_path: str
+    branch: str
+    git: GitClient
+
+
+@dataclass
 class Watcher:
     project: str
     component: str = ""
