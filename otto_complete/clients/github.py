@@ -7,29 +7,22 @@ log = logging.getLogger(__name__)
 
 BOT_MARKER = "<!-- otto-complete -->"
 
-_gh_auth = None
-
-
-def set_gh_auth(auth):
-    global _gh_auth
-    _gh_auth = auth
-
-
-def _run_gh(*args, **kwargs) -> str:
-    env = None
-    if _gh_auth is not None:
-        env = {**os.environ, "GH_TOKEN": _gh_auth.token}
-    result = subprocess.run(
-        ["gh", *args],
-        capture_output=True, text=True, timeout=kwargs.get("timeout", 120),
-        env=env,
-    )
-    return result.stdout.strip()
-
 
 class GitHubClient:
-    def __init__(self, repo: str):
+    def __init__(self, repo: str, auth=None):
         self.repo = repo
+        self.auth = auth
+
+    def _run_gh(self, *args, **kwargs) -> str:
+        env = None
+        if self.auth is not None:
+            env = {**os.environ, "GH_TOKEN": self.auth.token}
+        result = subprocess.run(
+            ["gh", *args],
+            capture_output=True, text=True, timeout=kwargs.get("timeout", 120),
+            env=env,
+        )
+        return result.stdout.strip()
 
     def create_pr(self, branch: str, title: str, body: str, base: str = "", labels: str = "") -> str:
         args = ["pr", "create", "--repo", self.repo, "--head", branch, "--title", title, "--body", body]
@@ -41,20 +34,20 @@ class GitHubClient:
             for label in labels.split(","):
                 label_args += ["--label", label.strip()]
             try:
-                return _run_gh(*args, *label_args)
+                return self._run_gh(*args, *label_args)
             except Exception:
                 log.warning("PR creation with labels failed, retrying without")
 
-        return _run_gh(*args)
+        return self._run_gh(*args)
 
     def pr_state(self, pr_number: int) -> str:
-        return _run_gh("pr", "view", str(pr_number), "--repo", self.repo, "--json", "state", "-q", ".state") or "UNKNOWN"
+        return self._run_gh("pr", "view", str(pr_number), "--repo", self.repo, "--json", "state", "-q", ".state") or "UNKNOWN"
 
     def pr_is_merged(self, pr_number: int) -> bool:
         return self.pr_state(pr_number) == "MERGED"
 
     def find_pr_by_branch(self, branch: str) -> int | None:
-        result = _run_gh(
+        result = self._run_gh(
             "pr", "list", "--repo", self.repo, "--head", branch,
             "--state", "all", "--json", "number", "-q", ".[0].number",
         )
@@ -87,7 +80,7 @@ class GitHubClient:
             }
           }
         }'''
-        result = _run_gh(
+        result = self._run_gh(
             "api", "graphql",
             "-f", f"query={query}",
             "-F", f"owner={owner}",
@@ -97,13 +90,13 @@ class GitHubClient:
         return json.loads(result) if result else {}
 
     def get_pr_comments(self, pr_number: int) -> list[dict]:
-        result = _run_gh("api", f"repos/{self.repo}/issues/{pr_number}/comments", "--paginate")
+        result = self._run_gh("api", f"repos/{self.repo}/issues/{pr_number}/comments", "--paginate")
         return json.loads(result) if result else []
 
     def reply_to_review_comment(self, pr_number: int, comment_id: int, body: str) -> bool:
         body = f"{body}\n\n{BOT_MARKER}"
         try:
-            _run_gh(
+            self._run_gh(
                 "api", f"repos/{self.repo}/pulls/{pr_number}/comments/{comment_id}/replies",
                 "-f", f"body={body}",
             )
@@ -115,7 +108,7 @@ class GitHubClient:
     def comment_on_pr(self, pr_number: int, body: str) -> bool:
         body = f"{body}\n\n{BOT_MARKER}"
         try:
-            _run_gh("api", f"repos/{self.repo}/issues/{pr_number}/comments", "-f", f"body={body}")
+            self._run_gh("api", f"repos/{self.repo}/issues/{pr_number}/comments", "-f", f"body={body}")
             return True
         except Exception:
             log.warning("Failed to comment on PR #%d", pr_number)
@@ -129,7 +122,7 @@ class GitHubClient:
           }
         }'''
         try:
-            _run_gh("api", "graphql", "-f", f"query={mutation}", "-F", f"id={thread_id}")
+            self._run_gh("api", "graphql", "-f", f"query={mutation}", "-F", f"id={thread_id}")
             return True
         except Exception:
             log.warning("Failed to resolve thread %s", thread_id)
@@ -137,7 +130,7 @@ class GitHubClient:
 
     def add_reaction(self, comment_id: int, reaction: str = "eyes") -> bool:
         try:
-            _run_gh(
+            self._run_gh(
                 "api", f"repos/{self.repo}/issues/comments/{comment_id}/reactions",
                 "-f", f"content={reaction}",
             )
@@ -148,7 +141,7 @@ class GitHubClient:
 
     def comment_has_reaction(self, comment_id: int, reaction: str = "eyes") -> bool:
         try:
-            result = _run_gh(
+            result = self._run_gh(
                 "api", f"repos/{self.repo}/issues/comments/{comment_id}/reactions",
                 "--jq", f'[.[] | select(.content == "{reaction}")] | length',
             )
@@ -157,7 +150,7 @@ class GitHubClient:
             return False
 
     def get_pr_checks(self, pr_number: int) -> list[dict]:
-        result = _run_gh(
+        result = self._run_gh(
             "pr", "checks", str(pr_number), "--repo", self.repo,
             "--json", "name,bucket,state,description,link,completedAt",
         )
