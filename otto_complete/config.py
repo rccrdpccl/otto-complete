@@ -1,13 +1,23 @@
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import yaml
+
+if TYPE_CHECKING:
+    from otto_complete.clients.git import GitClient
+    from otto_complete.clients.github import GitHubClient
 
 
 @dataclass
 class Watcher:
     project: str
     component: str = ""
+    workspace_repo: str = ""
+    workspace_clone_url: str = ""
+    workspace_default_branch: str = ""
 
 
 @dataclass
@@ -66,13 +76,30 @@ class Config:
         )
 
 
+@dataclass
+class RepoContext:
+    repo: str
+    clone_url: str
+    clone_path: str
+    default_branch: str
+    specs_dir: str
+    git: GitClient
+    github: GitHubClient
+
+
 def load_config() -> Config:
     config_path = os.environ.get("OTTO_CONFIG", "/etc/otto-complete/config.yaml")
     with open(config_path) as f:
         raw = yaml.safe_load(f)
 
     watchers = [
-        Watcher(project=w["project"], component=w.get("component", ""))
+        Watcher(
+            project=w["project"],
+            component=w.get("component", ""),
+            workspace_repo=w.get("workspace_repo", ""),
+            workspace_clone_url=w.get("workspace_clone_url", ""),
+            workspace_default_branch=w.get("workspace_default_branch", ""),
+        )
         for w in raw.pop("watchers", [])
     ]
 
