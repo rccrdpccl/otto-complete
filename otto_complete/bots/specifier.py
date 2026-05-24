@@ -38,7 +38,7 @@ class SpecifierBot(BaseBot):
 
     def _recover(self, issue_key: str):
         branch = f"{self.config.branch_prefix_spec}{issue_key}"
-        pr_number = self.github.find_pr_by_branch(branch)
+        pr_number = self.spec_ctx.github.find_pr_by_branch(branch)
 
         if pr_number:
             log.info("%s: recovering — spec PR #%d exists, fixing label", issue_key, pr_number)
@@ -62,22 +62,24 @@ class SpecifierBot(BaseBot):
             self.jira.add_comment(issue_key, "otto-complete error: Failed to fetch JIRA details")
             return
 
-        self.git.ensure_repo_cloned()
+        self.spec_ctx.git.ensure_repo_cloned()
         branch = f"{cfg.branch_prefix_spec}{issue_key}"
-        self.git.create_branch(branch)
+        self.spec_ctx.git.create_branch(branch)
 
         spec_dir = self.spec_dir(issue_key)
         os.makedirs(spec_dir, exist_ok=True)
 
         prompt = self.render_template("spec-prompt.md",
             ISSUE_KEY=issue_key, SUMMARY=summary,
-            DESCRIPTION=description, SPECS_DIR=cfg.specs_dir)
+            DESCRIPTION=description, SPECS_DIR=self.spec_ctx.specs_dir)
 
         log.info("Running Claude for %s (max %d turns, $%s budget)",
                  issue_key, cfg.max_turns_spec, cfg.max_budget_spec)
 
         tools = "Read,Write,Edit,Bash(find *),Bash(grep *),Bash(rg *),Bash(git log*),Bash(git diff*),Bash(ls *),Bash(cat *)"
-        self.run_claude_on_repo("specifier", issue_key, prompt, tools, cfg.max_turns_spec, cfg.max_budget_spec)
+        self.run_claude_on_repo("specifier", issue_key, prompt, tools,
+                                cfg.max_turns_spec, cfg.max_budget_spec,
+                                self.spec_ctx.clone_path)
 
         spec_file = os.path.join(spec_dir, "spec.md")
         if not os.path.isfile(spec_file):
@@ -87,16 +89,16 @@ class SpecifierBot(BaseBot):
             return
 
         log.info("Spec file created, committing")
-        self.git.add(os.path.join(cfg.specs_dir, issue_key))
-        self.git.commit(f"{issue_key}(spec): create specification")
-        self.git.push_branch(branch)
+        self.spec_ctx.git.add(os.path.join(self.spec_ctx.specs_dir, issue_key))
+        self.spec_ctx.git.commit(f"{issue_key}(spec): create specification")
+        self.spec_ctx.git.push_branch(branch)
 
         pr_body = (
             f"## Specification for {issue_key}\n\n"
             f"**JIRA:** {cfg.jira_url}/browse/{issue_key}\n"
             f"**Summary:** {summary}\n\n"
             f"This PR contains a formal specification — **what** to build and **why**.\n"
-            f"Review the spec at `{cfg.specs_dir}/{issue_key}/spec.md`.\n\n"
+            f"Review the spec at `{self.spec_ctx.specs_dir}/{issue_key}/spec.md`.\n\n"
             f"### Review checklist\n"
             f"- [ ] Requirements are clear and testable\n"
             f"- [ ] Acceptance criteria are complete\n"
@@ -105,7 +107,8 @@ class SpecifierBot(BaseBot):
             f"Once merged, the planner bot will generate an implementation plan as a follow-up PR."
         )
 
-        pr_url = self.github.create_pr(branch, f"spec: {issue_key} {summary}", pr_body, cfg.default_branch, "ai:spec")
+        pr_url = self.spec_ctx.github.create_pr(branch, f"spec: {issue_key} {summary}",
+                                                pr_body, self.spec_ctx.default_branch, "ai:spec")
 
         if not pr_url or "error" in pr_url.lower():
             log.error("Failed to create PR for %s: %s", issue_key, pr_url)
@@ -121,34 +124,36 @@ class SpecifierBot(BaseBot):
     def _address_comments(self, issue_key: str):
         cfg = self.config
         branch = f"{cfg.branch_prefix_spec}{issue_key}"
-        pr_number = self.github.find_pr_by_branch(branch)
+        pr_number = self.spec_ctx.github.find_pr_by_branch(branch)
         if not pr_number:
             return
 
-        comments = collect_unaddressed_comments(self.github, pr_number)
+        comments = collect_unaddressed_comments(self.spec_ctx.github, pr_number)
         if not comments:
             return
 
         log.info("%s: found unaddressed review comments on PR #%d", issue_key, pr_number)
-        self.git.ensure_repo_cloned()
-        self.git.checkout_branch(branch)
+        self.spec_ctx.git.ensure_repo_cloned()
+        self.spec_ctx.git.checkout_branch(branch)
 
         formatted = format_comments_for_prompt(comments)
         prompt = self.render_template("spec-review-prompt.md",
-            ISSUE_KEY=issue_key, SPECS_DIR=cfg.specs_dir, COMMENTS=formatted)
+            ISSUE_KEY=issue_key, SPECS_DIR=self.spec_ctx.specs_dir, COMMENTS=formatted)
 
         log.info("Running Claude for %s review (max %d turns, $%s budget)",
                  issue_key, cfg.max_turns_review, cfg.max_budget_review)
 
         tools = "Read,Write,Edit,Bash(find *),Bash(grep *),Bash(rg *),Bash(cat *),Bash(ls *)"
-        self.run_claude_on_repo("specifier-review", issue_key, prompt, tools, cfg.max_turns_review, cfg.max_budget_review)
+        self.run_claude_on_repo("specifier-review", issue_key, prompt, tools,
+                                cfg.max_turns_review, cfg.max_budget_review,
+                                self.spec_ctx.clone_path)
 
-        spec_path = os.path.join(cfg.specs_dir, issue_key, "spec.md")
-        changes = self.git.status(spec_path)
+        spec_path = os.path.join(self.spec_ctx.specs_dir, issue_key, "spec.md")
+        changes = self.spec_ctx.git.status(spec_path)
         if changes:
             log.info("%s: spec updated, committing", issue_key)
-            self.git.add(spec_path)
-            self.git.commit(f"{issue_key}(spec): address review comments")
-            self.git.push_branch(branch, force=True)
+            self.spec_ctx.git.add(spec_path)
+            self.spec_ctx.git.commit(f"{issue_key}(spec): address review comments")
+            self.spec_ctx.git.push_branch(branch, force=True)
 
-        post_review_replies(self.github, issue_key, pr_number, comments, self.replies_file(issue_key))
+        post_review_replies(self.spec_ctx.github, issue_key, pr_number, comments, self.replies_file(issue_key))
