@@ -3,8 +3,7 @@ import logging
 import os
 import re
 
-from otto_complete.clients.github import BOT_MARKER
-from otto_complete.clients.platform import CodePlatform
+from otto_complete.clients.platform import BOT_MARKER, CodePlatform
 
 log = logging.getLogger(__name__)
 

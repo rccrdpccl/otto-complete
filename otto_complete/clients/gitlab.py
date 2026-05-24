@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 import requests
 
-from otto_complete.clients.github import BOT_MARKER
+from otto_complete.clients.platform import BOT_MARKER
 
 log = logging.getLogger(__name__)
 

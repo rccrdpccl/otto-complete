@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+BOT_MARKER = "<!-- otto-complete -->"
+
 
 class CodePlatform(Protocol):
     repo: str

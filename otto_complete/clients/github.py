@@ -5,7 +5,7 @@ import subprocess
 
 log = logging.getLogger(__name__)
 
-BOT_MARKER = "<!-- otto-complete -->"
+from otto_complete.clients.platform import BOT_MARKER
 
 
 class GitHubClient:
