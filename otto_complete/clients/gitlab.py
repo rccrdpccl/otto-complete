@@ -219,6 +219,8 @@ class GitLabClient:
         if self._last_mr_iid is None:
             log.warning("Cannot add reaction — no MR context")
             return False
+        if self.comment_has_reaction(comment_id, reaction):
+            return True
         try:
             self._post(
                 f"/projects/{self.project_path}/merge_requests/{self._last_mr_iid}/notes/{comment_id}/award_emoji",

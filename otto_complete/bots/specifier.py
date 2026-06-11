@@ -41,6 +41,10 @@ class SpecifierBot(BaseBot):
         pr_number = self.spec_ctx.github.find_pr_by_branch(branch)
 
         if pr_number:
+            if self._is_pr_closed(self.spec_ctx.github, pr_number):
+                log.info("%s: spec PR #%d is closed, removing ai labels", issue_key, pr_number)
+                self.jira.remove_label(issue_key, "ai:specifying")
+                return
             log.info("%s: recovering — spec PR #%d exists, fixing label", issue_key, pr_number)
             self.jira.swap_label(issue_key, "ai:specifying", "ai:spec-review")
         else:
@@ -128,6 +132,11 @@ class SpecifierBot(BaseBot):
         branch = f"{cfg.branch_prefix_spec}{issue_key}"
         pr_number = self.spec_ctx.github.find_pr_by_branch(branch)
         if not pr_number:
+            return
+
+        if self._is_pr_closed(self.spec_ctx.github, pr_number):
+            log.info("%s: spec PR #%d is closed, removing ai:spec-review label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:spec-review")
             return
 
         comments = collect_unaddressed_comments(self.spec_ctx.github, pr_number)

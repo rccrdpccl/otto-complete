@@ -96,11 +96,19 @@ class GitClient:
         args = ["push", "-u", "origin", branch]
         if force:
             args.append("--force-with-lease")
-        result = self._git(*args, timeout=120)
+        try:
+            result = self._git(*args, timeout=120)
+        except subprocess.TimeoutExpired:
+            log.warning("Push timed out for branch %s", branch)
+            return False
         if result.returncode != 0:
             log.warning("Push failed: %s", result.stderr.strip())
             return False
         return True
+
+    def has_commits_ahead(self, branch: str) -> bool:
+        result = self._git("rev-list", "--count", f"{self.default_branch}..{branch}")
+        return int(result.stdout.strip()) > 0
 
     def remove_file(self, path: str):
         full_path = os.path.join(self.clone_path, path)

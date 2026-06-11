@@ -52,12 +52,26 @@ class BaseBot:
         lines = [
             "## Source Repositories (Read-Only Reference)\n",
             "The following repositories are cloned locally for reference. "
-            "Read their code to understand the source implementations, "
-            "but do NOT modify them.\n",
+            "Do NOT modify them.\n",
+            "**CRITICAL: Before proposing or implementing changes to any Kubernetes/OpenShift "
+            "resources defined by these repos, you MUST examine their API type definitions "
+            "to understand the correct resource schema.** Specifically:\n",
+            "1. Search for API type definitions: `find <repo_path> -name '*_types.go'` or "
+            "`find <repo_path> -path '*/api/*' -name '*.go'`",
+            "2. Read the type structs to understand field names, nesting, and JSON tags",
+            "3. Check which fields belong to which resource (e.g., a field may be on the "
+            "bootstrap config, not the control plane)",
+            "4. Use the exact field paths from the CRD types — do not guess or assume\n",
         ]
         for src in self.source_repos:
-            lines.append(f"- **{src.repo}** (branch: {src.branch}): {src.clone_path}")
+            entry = f"- **{src.repo}** (branch: {src.branch}): `{src.clone_path}`"
+            if src.description:
+                entry += f"\n  {src.description}"
+            lines.append(entry)
         return "\n".join(lines)
+
+    def _is_pr_closed(self, github, pr_number: int) -> bool:
+        return github.pr_state(pr_number) == "CLOSED"
 
     def spec_dir(self, issue_key: str) -> str:
         return os.path.join(self.spec_ctx.clone_path, self.spec_ctx.specs_dir, issue_key)

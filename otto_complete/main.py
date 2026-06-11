@@ -134,6 +134,7 @@ def main():
             source_repos.append(SourceRepo(
                 repo=src_cfg.repo, clone_path=src_clone_path,
                 branch=src_branch, git=src_git,
+                description=src_cfg.description,
             ))
         if source_repos:
             log.info("Watcher %s%s: %d source repo(s): %s",

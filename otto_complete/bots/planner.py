@@ -41,6 +41,10 @@ class PlannerBot(BaseBot):
         pr_number = self.spec_ctx.github.find_pr_by_branch(branch)
 
         if pr_number:
+            if self._is_pr_closed(self.spec_ctx.github, pr_number):
+                log.info("%s: plan PR #%d is closed, removing ai labels", issue_key, pr_number)
+                self.jira.remove_label(issue_key, "ai:planning")
+                return
             log.info("%s: recovering — plan PR #%d exists, fixing label", issue_key, pr_number)
             self.jira.swap_label(issue_key, "ai:planning", "ai:plan-review")
             return
@@ -61,6 +65,11 @@ class PlannerBot(BaseBot):
 
         if not pr_number:
             log.warning("%s: no spec PR found for branch %s", issue_key, spec_branch)
+            return
+
+        if self._is_pr_closed(self.spec_ctx.github, pr_number):
+            log.info("%s: spec PR #%d is closed, removing ai:spec-review label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:spec-review")
             return
 
         if not self.spec_ctx.github.pr_is_merged(pr_number):
@@ -154,6 +163,11 @@ class PlannerBot(BaseBot):
         branch = f"{cfg.branch_prefix_plan}{issue_key}"
         pr_number = self.spec_ctx.github.find_pr_by_branch(branch)
         if not pr_number:
+            return
+
+        if self._is_pr_closed(self.spec_ctx.github, pr_number):
+            log.info("%s: plan PR #%d is closed, removing ai:plan-review label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:plan-review")
             return
 
         comments = collect_unaddressed_comments(self.spec_ctx.github, pr_number)

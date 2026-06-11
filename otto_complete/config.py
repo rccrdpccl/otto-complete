@@ -20,6 +20,7 @@ class SourceRepoConfig:
     auth_method: str = "pat"
     token_env: str = ""
     gitlab_url: str = ""
+    description: str = ""
 
 
 @dataclass
@@ -28,6 +29,7 @@ class SourceRepo:
     clone_path: str
     branch: str
     git: GitClient
+    description: str = ""
 
 
 @dataclass
@@ -148,6 +150,7 @@ def load_config() -> Config:
                 auth_method=src_auth.get("method", "pat"),
                 token_env=src_auth.get("token_env", src_default_token),
                 gitlab_url=src.get("gitlab_url", src_default_gitlab_url),
+                description=src.get("description", ""),
             ))
 
         watchers.append(Watcher(

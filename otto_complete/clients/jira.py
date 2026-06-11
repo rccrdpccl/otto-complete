@@ -51,7 +51,11 @@ class JiraClient:
         return self._search(jql)
 
     def query_by_label(self, project: str, label: str, component: str = "") -> list[str]:
-        jql = f'project = "{project}" AND labels = "{label}"{self._component_jql(component)}'
+        jql = (
+            f'project = "{project}" AND labels = "{label}"'
+            f' AND status not in (Done, Closed, Resolved)'
+            f'{self._component_jql(component)}'
+        )
         return self._search(jql)
 
     def get_summary(self, issue_key: str) -> str:

@@ -54,7 +54,13 @@ class ImplementerBot(BaseBot):
     def _recover_error(self, issue_key: str):
         branch = f"{self.config.branch_prefix_impl}{issue_key}"
         pr_number = self.impl_ctx.github.find_pr_by_branch(branch)
-        if pr_number and not self.impl_ctx.github.pr_is_merged(pr_number):
+        if not pr_number:
+            return
+        if self._is_pr_closed(self.impl_ctx.github, pr_number):
+            log.info("%s: impl PR #%d is closed, removing ai:error label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:error")
+            return
+        if not self.impl_ctx.github.pr_is_merged(pr_number):
             log.info("%s: recovering from ai:error — open PR #%d found, moving to impl-review", issue_key, pr_number)
             self._reset_ci_attempts(issue_key)
             self.jira.swap_label(issue_key, "ai:error", "ai:impl-review")
@@ -64,6 +70,10 @@ class ImplementerBot(BaseBot):
         pr_number = self.impl_ctx.github.find_pr_by_branch(branch)
 
         if pr_number:
+            if self._is_pr_closed(self.impl_ctx.github, pr_number):
+                log.info("%s: impl PR #%d is closed, removing ai labels", issue_key, pr_number)
+                self.jira.remove_label(issue_key, "ai:implementing")
+                return
             log.info("%s: recovering — impl PR #%d exists, fixing label", issue_key, pr_number)
             self.jira.swap_label(issue_key, "ai:implementing", "ai:impl-review")
             return
@@ -87,6 +97,11 @@ class ImplementerBot(BaseBot):
             self.jira.add_comment(issue_key, "otto-complete error: CI fixing recovery failed — no impl PR found")
             return
 
+        if self._is_pr_closed(self.impl_ctx.github, pr_number):
+            log.info("%s: impl PR #%d is closed, removing ai:ci-fixing label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:ci-fixing")
+            return
+
         log.info("%s: recovering ci-fixing — impl PR #%d exists, returning to impl-review", issue_key, pr_number)
         self.jira.swap_label(issue_key, "ai:ci-fixing", "ai:impl-review")
 
@@ -97,6 +112,11 @@ class ImplementerBot(BaseBot):
 
         if not pr_number:
             log.warning("%s: no plan PR found for branch %s", issue_key, plan_branch)
+            return
+
+        if self._is_pr_closed(self.spec_ctx.github, pr_number):
+            log.info("%s: plan PR #%d is closed, removing ai:plan-review label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:plan-review")
             return
 
         if not self.spec_ctx.github.pr_is_merged(pr_number):
@@ -142,16 +162,19 @@ class ImplementerBot(BaseBot):
             "Read,Write,Edit,Bash", cfg.max_turns_impl, cfg.max_budget_impl,
             self.impl_ctx.clone_path)
 
-        changes = self.impl_ctx.git.status()
-        if not changes:
+        uncommitted = self.impl_ctx.git.status()
+        if uncommitted:
+            log.info("Implementation produced uncommitted changes, committing")
+            self.impl_ctx.git.add()
+            self.impl_ctx.git.commit(f"{issue_key}: implement plan")
+        elif not self.impl_ctx.git.has_commits_ahead(branch):
             log.error("No changes produced for %s", issue_key)
             self.jira.swap_label(issue_key, "ai:implementing", "ai:error")
             self.jira.add_comment(issue_key, "otto-complete error: Implementation produced no changes")
             return
+        else:
+            log.info("Implementation produced commits directly (no uncommitted changes)")
 
-        log.info("Implementation produced changes, committing")
-        self.impl_ctx.git.add()
-        self.impl_ctx.git.commit(f"{issue_key}: implement plan")
         self.impl_ctx.git.push_branch(branch)
 
         summary, _ = self.jira.get_details(issue_key)
@@ -192,6 +215,11 @@ class ImplementerBot(BaseBot):
         impl_branch = f"{cfg.branch_prefix_impl}{issue_key}"
         pr_number = self.impl_ctx.github.find_pr_by_branch(impl_branch)
         if not pr_number:
+            return
+
+        if self._is_pr_closed(self.impl_ctx.github, pr_number):
+            log.info("%s: impl PR #%d is closed, removing ai:impl-review label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:impl-review")
             return
 
         if self.impl_ctx.github.pr_is_merged(pr_number):
@@ -289,11 +317,14 @@ class ImplementerBot(BaseBot):
             self.jira.add_comment(issue_key, f"CI fix attempt {attempt_number}: Flake detected — {fix_summary}")
             return
 
-        changes = self.impl_ctx.git.status()
-        if changes:
+        uncommitted = self.impl_ctx.git.status()
+        if uncommitted:
             log.info("%s: CI fix produced changes, committing", issue_key)
             self.impl_ctx.git.add()
             self.impl_ctx.git.commit(f"{issue_key}: CI fix attempt {attempt_number}")
+
+        has_new = uncommitted or self.impl_ctx.git.has_commits_ahead(impl_branch)
+        if has_new:
             if self.impl_ctx.git.push_branch(impl_branch, force=True):
                 self.jira.add_comment(issue_key, f"CI fix attempt {attempt_number}: {fix_summary}")
             else:
@@ -333,6 +364,11 @@ class ImplementerBot(BaseBot):
         if not pr_number:
             return
 
+        if self._is_pr_closed(self.impl_ctx.github, pr_number):
+            log.info("%s: impl PR #%d is closed, removing ai:impl-review label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:impl-review")
+            return
+
         comments = collect_unaddressed_comments(self.impl_ctx.github, pr_number)
         if not comments:
             return
@@ -365,13 +401,16 @@ class ImplementerBot(BaseBot):
             "Read,Write,Edit,Bash", cfg.max_turns_review, cfg.max_budget_review,
             self.impl_ctx.clone_path)
 
-        has_changes = bool(self.impl_ctx.git.status())
-        if has_changes:
+        uncommitted = bool(self.impl_ctx.git.status())
+        if uncommitted:
             log.info("%s: impl updated, committing", issue_key)
             if os.path.exists(replies_file_path):
                 os.remove(replies_file_path)
             self.impl_ctx.git.add()
             self.impl_ctx.git.commit(f"{issue_key}: address review comments")
+
+        has_changes = uncommitted or self.impl_ctx.git.has_commits_ahead(impl_branch)
+        if has_changes:
             self.impl_ctx.git.push_branch(impl_branch, force=True)
             self._reset_ci_attempts(issue_key)
 
