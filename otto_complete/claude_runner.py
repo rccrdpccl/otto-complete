@@ -3,7 +3,6 @@ import logging
 import subprocess
 
 from otto_complete.budget import BudgetTracker
-from otto_complete.config import Config
 from otto_complete.metrics import record_run
 
 log = logging.getLogger(__name__)
@@ -17,13 +16,13 @@ def set_budget_tracker(tracker: BudgetTracker):
 
 
 def run_claude(
-    config: Config,
     bot: str,
     issue_key: str,
     prompt: str,
     tools: str,
     max_turns: int,
     max_budget: str,
+    clone_path: str,
 ) -> tuple[int, dict]:
     if _budget and not _budget.can_spend(float(max_budget)):
         log.warning("Global budget exhausted ($%.2f / $%.2f) — skipping %s/%s",
@@ -41,10 +40,11 @@ def run_claude(
 
     log.info("Running Claude for %s/%s (max %d turns, $%s budget)", bot, issue_key, max_turns, max_budget)
 
+    result = None
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True,
-            cwd=config.clone_path, timeout=1800,
+            cwd=clone_path, timeout=1800,
         )
         exit_code = result.returncode
         output = {}
@@ -52,7 +52,11 @@ def run_claude(
             try:
                 output = json.loads(result.stdout)
             except json.JSONDecodeError:
-                log.warning("Failed to parse Claude JSON output")
+                log.warning("Failed to parse Claude JSON output for %s/%s", bot, issue_key)
+                for line in result.stdout.strip().splitlines()[-20:]:
+                    log.warning("Claude raw stdout [%s/%s]: %s", bot, issue_key, line)
+        elif exit_code != 0:
+            log.warning("Claude produced no stdout for %s/%s (exit code %d)", bot, issue_key, exit_code)
     except subprocess.TimeoutExpired:
         log.error("Claude timed out for %s/%s", bot, issue_key)
         exit_code = 1
@@ -66,6 +70,15 @@ def run_claude(
 
     if _budget:
         _budget.record(output.get("total_cost_usd", 0.0))
+
+    if result and result.stderr and result.stderr.strip():
+        for line in result.stderr.strip().splitlines()[-20:]:
+            log.info("Claude stderr [%s/%s]: %s", bot, issue_key, line)
+
+    if output.get("result"):
+        result_text = output["result"]
+        for line in result_text.splitlines()[-10:]:
+            log.info("Claude result [%s/%s]: %s", bot, issue_key, line)
 
     if exit_code != 0:
         log.warning("Claude exited with code %d for %s/%s (may still have produced changes)", exit_code, bot, issue_key)

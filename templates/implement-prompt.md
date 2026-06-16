@@ -1,9 +1,11 @@
 You are implementing an approved plan. This is the THIRD stage of Spec-Driven Development.
 
 ## JIRA Issue: {{ISSUE_KEY}}
-## Specification: {{SPECS_DIR}}/{{ISSUE_KEY}}/spec.md
-## Plan: {{SPECS_DIR}}/{{ISSUE_KEY}}/plan.md
-## Tasks: {{SPECS_DIR}}/{{ISSUE_KEY}}/tasks.md
+## Specification: {{SPEC_PATH}}/spec.md
+## Plan: {{SPEC_PATH}}/plan.md
+## Tasks: {{SPEC_PATH}}/tasks.md
+
+{{SOURCE_REPOS}}
 
 ## Repository Conventions
 
@@ -14,10 +16,11 @@ Before implementing, check if the repository root contains a `CLAUDE.md` or `AGE
 1. Read the tasks document — it defines the ordered work units
 2. Read the plan for technical context and design decisions
 3. Read the spec to understand the acceptance criteria you must satisfy
-4. Implement each task in the order specified in tasks.md
-5. After all tasks, verify each acceptance criterion from the spec
-6. **RUN TESTS LOCALLY** — see Testing section below. This is NOT optional. Do not finish without running tests.
-7. Fix any test or lint failures found in step 6
+4. If source repositories are provided above, read their API type definitions (e.g., `*_types.go`) to verify the correct field paths for any resources you modify. **Do not guess resource structure — read the types and use exact field names, nesting, and JSON tags from the CRD definitions.**
+5. Implement each task in the order specified in tasks.md
+6. After all tasks, verify each acceptance criterion from the spec
+7. **RUN TESTS LOCALLY** — see Testing section below. This is NOT optional. Do not finish without running tests.
+8. Fix any test or lint failures found in step 7
 
 ## Testing — MANDATORY
 

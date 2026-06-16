@@ -6,11 +6,14 @@ You are writing a formal specification for a JIRA issue. This is the FIRST stage
 **Description:**
 {{DESCRIPTION}}
 
+{{SOURCE_REPOS}}
+
 ## Instructions
 
 1. Read the JIRA issue carefully
 2. Explore the codebase to understand the current state of the relevant components
-3. Write a specification document to {{SPECS_DIR}}/{{ISSUE_KEY}}/spec.md
+3. If source repositories are provided above, explore their API type definitions (e.g., `*_types.go`, CRD YAML) to understand the data models and schemas of resources referenced in the JIRA issue. This ensures requirements reference correct field names and resource structures.
+4. Write a specification document to {{SPECS_DIR}}/{{ISSUE_KEY}}/spec.md
 
 ## Specification Format
 

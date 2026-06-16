@@ -3,11 +3,14 @@ You are creating an implementation plan from an approved specification. This is 
 ## JIRA Issue: {{ISSUE_KEY}}
 ## Approved Specification: {{SPECS_DIR}}/{{ISSUE_KEY}}/spec.md
 
+{{SOURCE_REPOS}}
+
 ## Instructions
 
 1. Read the specification document carefully — it is the source of truth for WHAT to build
 2. Explore the codebase to understand existing patterns, conventions, and architecture
-3. Write TWO documents:
+3. If source repositories are provided above, examine their API type definitions and CRD schemas to understand the exact structure of any resources you will be modifying. Read the `*_types.go` files (or equivalent) to identify correct field names, nesting depth, and which resource type each field belongs to. **Your plan MUST reference the actual CRD field paths — do not assume resource structure.**
+4. Write TWO documents:
    - `{{SPECS_DIR}}/{{ISSUE_KEY}}/plan.md` — technical implementation plan
    - `{{SPECS_DIR}}/{{ISSUE_KEY}}/tasks.md` — ordered task breakdown
 

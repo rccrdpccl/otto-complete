@@ -53,24 +53,34 @@ class ImplementerBot(BaseBot):
 
     def _recover_error(self, issue_key: str):
         branch = f"{self.config.branch_prefix_impl}{issue_key}"
-        pr_number = self.github.find_pr_by_branch(branch)
-        if pr_number and not self.github.pr_is_merged(pr_number):
+        pr_number = self.impl_ctx.github.find_pr_by_branch(branch)
+        if not pr_number:
+            return
+        if self._is_pr_closed(self.impl_ctx.github, pr_number):
+            log.info("%s: impl PR #%d is closed, removing ai:error label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:error")
+            return
+        if not self.impl_ctx.github.pr_is_merged(pr_number):
             log.info("%s: recovering from ai:error — open PR #%d found, moving to impl-review", issue_key, pr_number)
             self._reset_ci_attempts(issue_key)
             self.jira.swap_label(issue_key, "ai:error", "ai:impl-review")
 
     def _recover(self, issue_key: str):
         branch = f"{self.config.branch_prefix_impl}{issue_key}"
-        pr_number = self.github.find_pr_by_branch(branch)
+        pr_number = self.impl_ctx.github.find_pr_by_branch(branch)
 
         if pr_number:
+            if self._is_pr_closed(self.impl_ctx.github, pr_number):
+                log.info("%s: impl PR #%d is closed, removing ai labels", issue_key, pr_number)
+                self.jira.remove_label(issue_key, "ai:implementing")
+                return
             log.info("%s: recovering — impl PR #%d exists, fixing label", issue_key, pr_number)
             self.jira.swap_label(issue_key, "ai:implementing", "ai:impl-review")
             return
 
         plan_branch = f"{self.config.branch_prefix_plan}{issue_key}"
-        plan_pr = self.github.find_pr_by_branch(plan_branch)
-        if not plan_pr or not self.github.pr_is_merged(plan_pr):
+        plan_pr = self.spec_ctx.github.find_pr_by_branch(plan_branch)
+        if not plan_pr or not self.spec_ctx.github.pr_is_merged(plan_pr):
             log.warning("%s: recovering — no impl PR and plan not merged, cannot retry", issue_key)
             return
 
@@ -79,12 +89,17 @@ class ImplementerBot(BaseBot):
 
     def _recover_ci_fixer(self, issue_key: str):
         branch = f"{self.config.branch_prefix_impl}{issue_key}"
-        pr_number = self.github.find_pr_by_branch(branch)
+        pr_number = self.impl_ctx.github.find_pr_by_branch(branch)
 
         if not pr_number:
             log.warning("%s: recovering ci-fixing — no impl PR found, moving to error", issue_key)
             self.jira.swap_label(issue_key, "ai:ci-fixing", "ai:error")
             self.jira.add_comment(issue_key, "otto-complete error: CI fixing recovery failed — no impl PR found")
+            return
+
+        if self._is_pr_closed(self.impl_ctx.github, pr_number):
+            log.info("%s: impl PR #%d is closed, removing ai:ci-fixing label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:ci-fixing")
             return
 
         log.info("%s: recovering ci-fixing — impl PR #%d exists, returning to impl-review", issue_key, pr_number)
@@ -93,13 +108,18 @@ class ImplementerBot(BaseBot):
     def _check_and_implement(self, issue_key: str):
         cfg = self.config
         plan_branch = f"{cfg.branch_prefix_plan}{issue_key}"
-        pr_number = self.github.find_pr_by_branch(plan_branch)
+        pr_number = self.spec_ctx.github.find_pr_by_branch(plan_branch)
 
         if not pr_number:
             log.warning("%s: no plan PR found for branch %s", issue_key, plan_branch)
             return
 
-        if not self.github.pr_is_merged(pr_number):
+        if self._is_pr_closed(self.spec_ctx.github, pr_number):
+            log.info("%s: plan PR #%d is closed, removing ai:plan-review label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:plan-review")
+            return
+
+        if not self.spec_ctx.github.pr_is_merged(pr_number):
             log.info("%s: plan PR #%d not yet merged", issue_key, pr_number)
             return
 
@@ -112,9 +132,11 @@ class ImplementerBot(BaseBot):
     def _implement_issue(self, issue_key: str):
         cfg = self.config
 
-        self.git.ensure_repo_cloned()
+        self.spec_ctx.git.ensure_repo_cloned()
+        self.impl_ctx.git.ensure_repo_cloned()
+        self.ensure_source_repos_cloned()
         branch = f"{cfg.branch_prefix_impl}{issue_key}"
-        self.git.create_branch(branch)
+        self.impl_ctx.git.create_branch(branch)
 
         plan_file = os.path.join(self.spec_dir(issue_key), "plan.md")
         if not os.path.isfile(plan_file):
@@ -123,44 +145,59 @@ class ImplementerBot(BaseBot):
             self.jira.add_comment(issue_key, "otto-complete error: Plan file missing from merged branch")
             return
 
+        if self.spec_ctx is not self.impl_ctx:
+            spec_path = os.path.join(self.spec_ctx.clone_path,
+                                     self.spec_ctx.specs_dir, issue_key)
+        else:
+            spec_path = os.path.join(self.spec_ctx.specs_dir, issue_key)
+
         prompt = self.render_template("implement-prompt.md",
-            ISSUE_KEY=issue_key, SPECS_DIR=cfg.specs_dir)
+            ISSUE_KEY=issue_key, SPEC_PATH=spec_path,
+            SOURCE_REPOS=self.format_source_repos_section())
 
         log.info("Running Claude for %s (max %d turns, $%s budget)",
                  issue_key, cfg.max_turns_impl, cfg.max_budget_impl)
 
         self.run_claude_on_repo("implementer", issue_key, prompt,
-            "Read,Write,Edit,Bash", cfg.max_turns_impl, cfg.max_budget_impl)
+            "Read,Write,Edit,Bash", cfg.max_turns_impl, cfg.max_budget_impl,
+            self.impl_ctx.clone_path)
 
-        changes = self.git.status()
-        if not changes:
+        uncommitted = self.impl_ctx.git.status()
+        if uncommitted:
+            log.info("Implementation produced uncommitted changes, committing")
+            self.impl_ctx.git.add()
+            self.impl_ctx.git.commit(f"{issue_key}: implement plan")
+        elif not self.impl_ctx.git.has_commits_ahead(branch):
             log.error("No changes produced for %s", issue_key)
             self.jira.swap_label(issue_key, "ai:implementing", "ai:error")
             self.jira.add_comment(issue_key, "otto-complete error: Implementation produced no changes")
             return
+        else:
+            log.info("Implementation produced commits directly (no uncommitted changes)")
 
-        log.info("Implementation produced changes, committing")
-        self.git.add()
-        self.git.commit(f"{issue_key}: implement plan")
-        self.git.push_branch(branch)
+        self.impl_ctx.git.push_branch(branch)
 
         summary, _ = self.jira.get_details(issue_key)
-        spec_pr = self.github.find_pr_by_branch(f"{cfg.branch_prefix_spec}{issue_key}")
-        plan_pr = self.github.find_pr_by_branch(f"{cfg.branch_prefix_plan}{issue_key}")
+        spec_pr = self.spec_ctx.github.find_pr_by_branch(f"{cfg.branch_prefix_spec}{issue_key}")
+        plan_pr = self.spec_ctx.github.find_pr_by_branch(f"{cfg.branch_prefix_plan}{issue_key}")
+
+        if self.spec_ctx is not self.impl_ctx:
+            spec_pr_ref = f"{self.spec_ctx.repo}#{spec_pr}"
+            plan_pr_ref = f"{self.spec_ctx.repo}#{plan_pr}"
+        else:
+            spec_pr_ref = f"#{spec_pr}"
+            plan_pr_ref = f"#{plan_pr}"
 
         pr_body = (
             f"## {issue_key}: {summary}\n\n"
             f"**JIRA:** {cfg.jira_url}/browse/{issue_key}\n"
-            f"**Spec PR:** #{spec_pr}\n"
-            f"**Plan PR:** #{plan_pr}\n\n"
-            f"Implementation of the approved plan.\n\n"
-            f"See:\n"
-            f"- `{cfg.specs_dir}/{issue_key}/spec.md` — specification\n"
-            f"- `{cfg.specs_dir}/{issue_key}/plan.md` — implementation plan\n"
-            f"- `{cfg.specs_dir}/{issue_key}/tasks.md` — task breakdown"
+            f"**Spec PR:** {spec_pr_ref}\n"
+            f"**Plan PR:** {plan_pr_ref}\n\n"
+            f"Implementation of the approved plan."
         )
 
-        pr_url = self.github.create_pr(branch, f"{issue_key}: {summary}", pr_body, cfg.default_branch, "ai:impl")
+        pr_url = self.impl_ctx.github.create_pr(branch, f"{issue_key}: {summary}",
+                                                pr_body, self.impl_ctx.default_branch, "ai:impl")
 
         if not pr_url or "error" in pr_url.lower():
             log.error("Failed to create impl PR for %s: %s", issue_key, pr_url)
@@ -176,21 +213,26 @@ class ImplementerBot(BaseBot):
     def _check_and_fix_ci(self, issue_key: str):
         cfg = self.config
         impl_branch = f"{cfg.branch_prefix_impl}{issue_key}"
-        pr_number = self.github.find_pr_by_branch(impl_branch)
+        pr_number = self.impl_ctx.github.find_pr_by_branch(impl_branch)
         if not pr_number:
             return
 
-        if self.github.pr_is_merged(pr_number):
+        if self._is_pr_closed(self.impl_ctx.github, pr_number):
+            log.info("%s: impl PR #%d is closed, removing ai:impl-review label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:impl-review")
             return
 
-        if self.github.checks_are_pending(pr_number):
+        if self.impl_ctx.github.pr_is_merged(pr_number):
+            return
+
+        if self.impl_ctx.github.checks_are_pending(pr_number):
             log.info("%s: CI checks still pending on PR #%d, skipping", issue_key, pr_number)
             return
 
-        if self.github.all_checks_pass(pr_number):
+        if self.impl_ctx.github.all_checks_pass(pr_number):
             return
 
-        failed_checks = self.github.get_failed_checks(pr_number)
+        failed_checks = self.impl_ctx.github.get_failed_checks(pr_number)
         if not failed_checks:
             return
 
@@ -219,29 +261,40 @@ class ImplementerBot(BaseBot):
                         failed_checks: list[dict], attempt_number: int):
         cfg = self.config
 
-        self.git.ensure_repo_cloned()
-        self.git.checkout_branch(impl_branch)
+        self.impl_ctx.git.ensure_repo_cloned()
+        self.ensure_source_repos_cloned()
+        self.impl_ctx.git.checkout_branch(impl_branch)
 
         analysis_file = os.path.join(self.spec_dir(issue_key), "ci-analysis.json")
         replies_file_path = self.replies_file(issue_key)
-        self.git.remove_file(os.path.relpath(analysis_file, cfg.clone_path))
-        self.git.remove_file(os.path.relpath(replies_file_path, cfg.clone_path))
+        if os.path.exists(analysis_file):
+            os.remove(analysis_file)
+        if os.path.exists(replies_file_path):
+            os.remove(replies_file_path)
 
-        failed_checks_text = self.github.format_failed_checks(failed_checks)
+        failed_checks_text = self.impl_ctx.github.format_failed_checks(failed_checks)
         log_urls = "\n".join(c.get("link", "") for c in failed_checks[:10] if c.get("link"))
 
+        if self.spec_ctx is not self.impl_ctx:
+            specs_dir_for_prompt = os.path.join(self.spec_ctx.clone_path,
+                                                self.spec_ctx.specs_dir)
+        else:
+            specs_dir_for_prompt = self.spec_ctx.specs_dir
+
         prompt = self.render_template("ci-fix-prompt.md",
-            ISSUE_KEY=issue_key, SPECS_DIR=cfg.specs_dir,
+            ISSUE_KEY=issue_key, SPECS_DIR=specs_dir_for_prompt,
             PR_NUMBER=str(pr_number), ATTEMPT_NUMBER=str(attempt_number),
             MAX_ATTEMPTS=str(cfg.ci_max_retries),
             FAILED_CHECKS=failed_checks_text,
-            LOG_URLS=log_urls)
+            LOG_URLS=log_urls,
+            SOURCE_REPOS=self.format_source_repos_section())
 
         log.info("Running Claude for %s CI fix (attempt %d, max %d turns, $%s budget)",
                  issue_key, attempt_number, cfg.max_turns_ci_fix, cfg.max_budget_ci_fix)
 
         self.run_claude_on_repo("implementer-ci-fix", issue_key, prompt,
-            "Read,Write,Edit,Bash", cfg.max_turns_ci_fix, cfg.max_budget_ci_fix)
+            "Read,Write,Edit,Bash", cfg.max_turns_ci_fix, cfg.max_budget_ci_fix,
+            self.impl_ctx.clone_path)
 
         is_flake = False
         fix_summary = "Claude analysis completed"
@@ -260,16 +313,19 @@ class ImplementerBot(BaseBot):
 
         if is_flake:
             log.info("%s: CI failure identified as flake, posting /retest", issue_key)
-            self.github.comment_on_pr(pr_number, "/retest")
+            self.impl_ctx.github.comment_on_pr(pr_number, "/retest")
             self.jira.add_comment(issue_key, f"CI fix attempt {attempt_number}: Flake detected — {fix_summary}")
             return
 
-        changes = self.git.status()
-        if changes:
+        uncommitted = self.impl_ctx.git.status()
+        if uncommitted:
             log.info("%s: CI fix produced changes, committing", issue_key)
-            self.git.add()
-            self.git.commit(f"{issue_key}: CI fix attempt {attempt_number}")
-            if self.git.push_branch(impl_branch, force=True):
+            self.impl_ctx.git.add()
+            self.impl_ctx.git.commit(f"{issue_key}: CI fix attempt {attempt_number}")
+
+        has_new = uncommitted or self.impl_ctx.git.has_commits_ahead(impl_branch)
+        if has_new:
+            if self.impl_ctx.git.push_branch(impl_branch, force=True):
                 self.jira.add_comment(issue_key, f"CI fix attempt {attempt_number}: {fix_summary}")
             else:
                 log.warning("%s: push failed for CI fix", issue_key)
@@ -304,38 +360,58 @@ class ImplementerBot(BaseBot):
     def _address_comments(self, issue_key: str):
         cfg = self.config
         impl_branch = f"{cfg.branch_prefix_impl}{issue_key}"
-        pr_number = self.github.find_pr_by_branch(impl_branch)
+        pr_number = self.impl_ctx.github.find_pr_by_branch(impl_branch)
         if not pr_number:
             return
 
-        comments = collect_unaddressed_comments(self.github, pr_number)
+        if self._is_pr_closed(self.impl_ctx.github, pr_number):
+            log.info("%s: impl PR #%d is closed, removing ai:impl-review label", issue_key, pr_number)
+            self.jira.remove_label(issue_key, "ai:impl-review")
+            return
+
+        comments = collect_unaddressed_comments(self.impl_ctx.github, pr_number)
         if not comments:
             return
 
         log.info("%s: found unaddressed review comments on impl PR #%d", issue_key, pr_number)
-        self.git.ensure_repo_cloned()
-        self.git.checkout_branch(impl_branch)
+        self.impl_ctx.git.ensure_repo_cloned()
+        self.ensure_source_repos_cloned()
+        self.impl_ctx.git.checkout_branch(impl_branch)
 
         replies_file_path = self.replies_file(issue_key)
-        self.git.remove_file(os.path.relpath(replies_file_path, cfg.clone_path))
+        if os.path.exists(replies_file_path):
+            os.remove(replies_file_path)
 
         formatted = format_comments_for_prompt(comments)
+
+        if self.spec_ctx is not self.impl_ctx:
+            specs_dir_for_prompt = os.path.join(self.spec_ctx.clone_path,
+                                                self.spec_ctx.specs_dir)
+        else:
+            specs_dir_for_prompt = self.spec_ctx.specs_dir
+
         prompt = self.render_template("impl-review-prompt.md",
-            ISSUE_KEY=issue_key, SPECS_DIR=cfg.specs_dir, COMMENTS=formatted)
+            ISSUE_KEY=issue_key, SPECS_DIR=specs_dir_for_prompt, COMMENTS=formatted,
+            SOURCE_REPOS=self.format_source_repos_section())
 
         log.info("Running Claude for %s impl review (max %d turns, $%s budget)",
                  issue_key, cfg.max_turns_review, cfg.max_budget_review)
 
         self.run_claude_on_repo("implementer-review", issue_key, prompt,
-            "Read,Write,Edit,Bash", cfg.max_turns_review, cfg.max_budget_review)
+            "Read,Write,Edit,Bash", cfg.max_turns_review, cfg.max_budget_review,
+            self.impl_ctx.clone_path)
 
-        has_changes = bool(self.git.status())
-        if has_changes:
+        uncommitted = bool(self.impl_ctx.git.status())
+        if uncommitted:
             log.info("%s: impl updated, committing", issue_key)
-            self.git.remove_file(os.path.relpath(replies_file_path, cfg.clone_path))
-            self.git.add()
-            self.git.commit(f"{issue_key}: address review comments")
-            self.git.push_branch(impl_branch, force=True)
+            if os.path.exists(replies_file_path):
+                os.remove(replies_file_path)
+            self.impl_ctx.git.add()
+            self.impl_ctx.git.commit(f"{issue_key}: address review comments")
+
+        has_changes = uncommitted or self.impl_ctx.git.has_commits_ahead(impl_branch)
+        if has_changes:
+            self.impl_ctx.git.push_branch(impl_branch, force=True)
             self._reset_ci_attempts(issue_key)
 
-        post_review_replies(self.github, issue_key, pr_number, comments, replies_file_path, has_changes)
+        post_review_replies(self.impl_ctx.github, issue_key, pr_number, comments, replies_file_path, has_changes)

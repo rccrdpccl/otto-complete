@@ -23,7 +23,8 @@ RUN git clone https://github.com/obra/superpowers.git /opt/superpowers \
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 
-RUN useradd -m -s /bin/bash agent
+RUN useradd -m -s /bin/bash agent \
+    && mkdir -p /workdir && chown agent:agent /workdir
 USER agent
 WORKDIR /home/agent/otto-complete
 
